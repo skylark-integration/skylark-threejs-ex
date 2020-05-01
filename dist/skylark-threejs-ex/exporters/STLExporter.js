@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(["skylark-threejs"],function(r){var e,t;return r.STLExporter=function(){},r.STLExporter.prototype={constructor:r.STLExporter,parse:(e=new r.Vector3,t=new r.Matrix3,function(o,a){void 0===a&&(a={});var n=void 0!==a.binary&&a.binary,i=[],l=0;if(o.traverse(function(e){if(e.isMesh){var t=e.geometry;t.isBufferGeometry&&(t=(new r.Geometry).fromBufferGeometry(t)),t.isGeometry&&(l+=t.faces.length,i.push({geometry:t,matrixWorld:e.matrixWorld}))}}),n){var y=80,f=new ArrayBuffer(2*l+3*l*4*4+80+4);(M=new DataView(f)).setUint32(y,l,!0),y+=4;for(var s=0,p=i.length;s<p;s++){var m=(w=i[s]).geometry.vertices,x=w.geometry.faces,c=w.matrixWorld;t.getNormalMatrix(c);for(var v=0,d=x.length;v<d;v++){var g=x[v];e.copy(g.normal).applyMatrix3(t).normalize(),M.setFloat32(y,e.x,!0),y+=4,M.setFloat32(y,e.y,!0),y+=4,M.setFloat32(y,e.z,!0),y+=4;for(var u=[g.a,g.b,g.c],h=0;h<3;h++)e.copy(m[u[h]]).applyMatrix4(c),M.setFloat32(y,e.x,!0),y+=4,M.setFloat32(y,e.y,!0),y+=4,M.setFloat32(y,e.z,!0),y+=4;M.setUint16(y,0,!0),y+=2}}return M}var M="";for(M+="solid exported\n",s=0,p=i.length;s<p;s++){var w;for(m=(w=i[s]).geometry.vertices,x=w.geometry.faces,c=w.matrixWorld,t.getNormalMatrix(c),v=0,d=x.length;v<d;v++){for(g=x[v],e.copy(g.normal).applyMatrix3(t).normalize(),M+="\tfacet normal "+e.x+" "+e.y+" "+e.z+"\n",M+="\t\touter loop\n",u=[g.a,g.b,g.c],h=0;h<3;h++)e.copy(m[u[h]]).applyMatrix4(c),M+="\t\t\tvertex "+e.x+" "+e.y+" "+e.z+"\n";M+="\t\tendloop\n",M+="\tendfacet\n"}}return M+="endsolid exported\n"})},r.STLExporter});
+//# sourceMappingURL=../sourcemaps/exporters/STLExporter.js.map

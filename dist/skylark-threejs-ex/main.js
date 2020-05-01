@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(["skylark-threejs","./shaders/CopyShader","./shaders/BokehShader","./shaders/SAOShader","./shaders/DepthLimitedBlurShader","./shaders/UnpackDepthRGBAShader","./shaders/ConvolutionShader","./shaders/LuminosityHighPassShader","./shaders/FXAAShader","./shaders/SSAOShader","./shaders/FilmShader","./shaders/DotScreenShader","./shaders/LuminosityShader","./shaders/SobelOperatorShader","./shaders/ColorifyShader","./shaders/ToneMapShader","./shaders/TechnicolorShader","./shaders/HueSaturationShader","./postprocessing/EffectComposer","./postprocessing/RenderPass","./postprocessing/ShaderPass","./postprocessing/MaskPass","./curves/NURBSCurve","./curves/NURBSSurface","./curves/NURBSUtils","./objects/Lensflare","./objects/Reflector","./objects/Refractor","./loaders/TTFLoader","./loaders/3MFLoader","./loaders/AMFLoader","./loaders/AssimpLoader","./loaders/ColladaLoader","./loaders/DRACOLoader","./loaders/FBXLoader","./loaders/GCodeLoader","./loaders/GLTFLoader","./loaders/MTLLoader","./loaders/OBJLoader","./loaders/PCDLoader","./loaders/PLYLoader","./loaders/PRWMLoader","./loaders/STLLoader","./loaders/SVGLoader","./loaders/TDSLoader","./loaders/VTKLoader","./loaders/XLoader","./loaders/DDSLoader","./loaders/PVRLoader","./loaders/TGALoader","./loaders/KTXLoader","./modifiers/SimplifyModifier","./modifiers/SubdivisionModifier","./exporters/DRACOExporter","./exporters/OBJExporter","./exporters/STLExporter","./exporters/GLTFExporter","./exporters/ColladaExporter","./exporters/PLYExporter"],function(e){return e});
+//# sourceMappingURL=sourcemaps/main.js.map

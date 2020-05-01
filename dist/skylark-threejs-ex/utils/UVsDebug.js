@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(["skylark-threejs"],function(e){return e.UVsDebug=function(t,r){var f="abc",l=new e.Vector2,o=new e.Vector2,i=[new e.Vector2,new e.Vector2,new e.Vector2],n=[],a=document.createElement("canvas"),c=r||1024,u=r||1024;a.width=c,a.height=u;var b=a.getContext("2d");if(b.lineWidth=2,b.strokeStyle="rgba( 0, 0, 0, 1.0 )",b.textAlign="center",b.fillStyle="rgba( 255, 255, 255, 1.0 )",b.fillRect(0,0,c,u),t.isGeometry)for(var x=t.faces,g=t.faceVertexUvs[0],y=0,s=g.length;y<s;y++){n=x[y];var d=g[y];n[0]=n.a,n[1]=n.b,n[2]=n.c,i[0].copy(d[0]),i[1].copy(d[1]),i[2].copy(d[2]),m(n,i,y)}else{var v=t.index,h=t.attributes.uv;if(v)for(y=0,s=v.count;y<s;y+=3)n[0]=v.getX(y),n[1]=v.getX(y+1),n[2]=v.getX(y+2),i[0].fromBufferAttribute(h,n[0]),i[1].fromBufferAttribute(h,n[1]),i[2].fromBufferAttribute(h,n[2]),m(n,i,y/3);else for(y=0,s=h.count;y<s;y+=3)n[0]=y,n[1]=y+1,n[2]=y+2,i[0].fromBufferAttribute(h,n[0]),i[1].fromBufferAttribute(h,n[1]),i[2].fromBufferAttribute(h,n[2]),m(n,i,y/3)}return a;function m(e,t,r){b.beginPath(),l.set(0,0);for(var i=0,n=t.length;i<n;i++){var a=t[i];l.x+=a.x,l.y+=a.y,0===i?b.moveTo(a.x*c,(1-a.y)*u):b.lineTo(a.x*c,(1-a.y)*u)}for(b.closePath(),b.stroke(),l.divideScalar(t.length),b.font="12pt Arial bold",b.fillStyle="rgba( 0, 0, 0, 1.0 )",b.fillText(r,l.x*c,(1-l.y)*u),l.x>.95&&b.fillText(r,l.x%1*c,(1-l.y)*u),b.font="8pt Arial bold",b.fillStyle="rgba( 0, 0, 0, 1.0 )",i=0,n=t.length;i<n;i++){a=t[i];o.addVectors(l,a).divideScalar(2);var x=e[i];b.fillText(f[i]+x,o.x*c,(1-o.y)*u),o.x>.95&&b.fillText(f[i]+x,o.x%1*c,(1-o.y)*u)}}},e.UVsDebug});
+//# sourceMappingURL=../sourcemaps/utils/UVsDebug.js.map

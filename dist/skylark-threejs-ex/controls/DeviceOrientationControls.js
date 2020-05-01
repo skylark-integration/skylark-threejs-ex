@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(["skylark-threejs"],function(e){return e.DeviceOrientationControls=function(n){var t=this;this.object=n,this.object.rotation.reorder("YXZ"),this.enabled=!0,this.deviceOrientation={},this.screenOrientation=0,this.alphaOffset=0;var i,o,a,r,s=function(e){t.deviceOrientation=e},c=function(){t.screenOrientation=window.orientation||0},d=(i=new e.Vector3(0,0,1),o=new e.Euler,a=new e.Quaternion,r=new e.Quaternion(-Math.sqrt(.5),0,0,Math.sqrt(.5)),function(e,n,t,s,c){o.set(t,n,-s,"YXZ"),e.setFromEuler(o),e.multiply(r),e.multiply(a.setFromAxisAngle(i,-c))});this.connect=function(){c(),void 0!==window.DeviceOrientationEvent&&"function"==typeof window.DeviceOrientationEvent.requestPermission?window.DeviceOrientationEvent.requestPermission().then(function(e){"granted"==e&&(window.addEventListener("orientationchange",c,!1),window.addEventListener("deviceorientation",s,!1))}).catch(function(e){console.error("THREE.DeviceOrientationControls: Unable to use DeviceOrientation API:",e)}):(window.addEventListener("orientationchange",c,!1),window.addEventListener("deviceorientation",s,!1)),t.enabled=!0},this.disconnect=function(){window.removeEventListener("orientationchange",c,!1),window.removeEventListener("deviceorientation",s,!1),t.enabled=!1},this.update=function(){if(!1!==t.enabled){var n=t.deviceOrientation;if(n){var i=n.alpha?e.MathUtils.degToRad(n.alpha)+t.alphaOffset:0,o=n.beta?e.MathUtils.degToRad(n.beta):0,a=n.gamma?e.MathUtils.degToRad(n.gamma):0,r=t.screenOrientation?e.MathUtils.degToRad(t.screenOrientation):0;d(t.object.quaternion,i,o,a,r)}}},this.dispose=function(){t.disconnect()},this.connect()},e.DeviceOrientationControls});
+//# sourceMappingURL=../sourcemaps/controls/DeviceOrientationControls.js.map
