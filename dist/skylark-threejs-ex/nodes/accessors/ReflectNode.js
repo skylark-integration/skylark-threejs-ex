@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(["../core/TempNode","./PositionNode","./NormalNode"],function(e,t,r){"use strict";function o(t){e.call(this,"v3"),this.scope=t||o.CUBE}return o.CUBE="cube",o.SPHERE="sphere",o.VECTOR="vector",o.prototype=Object.create(e.prototype),o.prototype.constructor=o,o.prototype.nodeType="Reflect",o.prototype.getUnique=function(e){return!e.context.viewNormal},o.prototype.getType=function(){switch(this.scope){case o.SPHERE:return"v2"}return this.type},o.prototype.generate=function(e,c){var i=this.getUnique(e);if(e.isShader("fragment")){var n;switch(this.scope){case o.VECTOR:var s=new r(r.VIEW),a=e.context.roughness,p=s.build(e,"v3"),d=new t(t.VIEW).build(e,"v3"),u=a?a.build(e,"f"):void 0,v=`reflect( -normalize( ${d} ), ${p} )`;u&&(v=`normalize( mix( ${v}, ${p}, ${u} * ${u} ) )`);var l=`inverseTransformDirection( ${v}, viewMatrix )`;i?(e.addNodeCode(`vec3 reflectVec = ${l};`),n="reflectVec"):n=l;break;case o.CUBE:l="vec3( -"+(f=new o(o.VECTOR).build(e,"v3"))+".x, "+f+".yz )";i?(e.addNodeCode(`vec3 reflectCubeVec = ${l};`),n="reflectCubeVec"):n=l;break;case o.SPHERE:var f;l="normalize( ( viewMatrix * vec4( "+(f=new o(o.VECTOR).build(e,"v3"))+", 0.0 ) ).xyz + vec3( 0.0, 0.0, 1.0 ) ).xy * 0.5 + 0.5";i?(e.addNodeCode(`vec2 reflectSphereVec = ${l};`),n="reflectSphereVec"):n=l}return e.format(n,this.getType(e),c)}return console.warn("THREE.ReflectNode is not compatible with "+e.shader+" shader."),e.format("vec3( 0.0 )",this.type,c)},o.prototype.toJSON=function(e){var t=this.getJSONNode(e);return t||((t=this.createJSONNode(e)).scope=this.scope),t},o});
+//# sourceMappingURL=../../sourcemaps/nodes/accessors/ReflectNode.js.map

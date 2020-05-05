@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs","./Reflector"],function(e,t){return e.ReflectorRTT=function(t,r){e.Reflector.call(this,t,r),this.geometry.setDrawRange(0,0)},e.ReflectorRTT.prototype=Object.create(e.Reflector.prototype),e.ReflectorRTT});
+define(["../objects/Reflector"],function(t){"use strict";var e=function(e,r){t.call(this,e,r),this.geometry.setDrawRange(0,0)};return e.prototype=Object.create(t.prototype),e});
 //# sourceMappingURL=../sourcemaps/objects/ReflectorRTT.js.map

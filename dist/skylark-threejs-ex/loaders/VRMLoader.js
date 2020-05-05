@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs","./GLTFLoader"],function(r){return r.VRMLoader=function(){function e(e){if(void 0===r.GLTFLoader)throw new Error("THREE.VRMLoader: Import THREE.GLTFLoader.");r.Loader.call(this,e),this.gltfLoader=new r.GLTFLoader(this.manager)}return e.prototype=Object.assign(Object.create(r.Loader.prototype),{constructor:e,load:function(r,e,o,t){var a=this;this.gltfLoader.load(r,function(r){a.parse(r,e)},o,t)},setDRACOLoader:function(r){return this.glTFLoader.setDRACOLoader(r),this},parse:function(r,e){e(r)}}),e}(),r.VRMLoader});
+define(["skylark-threejs","./GLTFLoader"],function(t,r){"use strict";return function(){function e(e){if(void 0===r)throw new Error("THREE.VRMLoader: Import GLTFLoader.");t.Loader.call(this,e),this.gltfLoader=new r(this.manager)}return e.prototype=Object.assign(Object.create(t.Loader.prototype),{constructor:e,load:function(t,r,e,o){var n=this;this.gltfLoader.load(t,function(t){n.parse(t,r)},e,o)},setDRACOLoader:function(t){return this.glTFLoader.setDRACOLoader(t),this},parse:function(t,r){r(t)}}),e}()});
 //# sourceMappingURL=../sourcemaps/loaders/VRMLoader.js.map

@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(["skylark-threejs"],function(t){"use strict";var e=new t.Vector3,r=new t.Vector3,i=new t.Matrix3,o=["a","b","c"];function a(e,r,i,o){this.object=e,this.size=void 0!==r?r:1;var a=void 0!==i?i:16711680,s=void 0!==o?o:1,n=0,l=this.object.geometry;l&&l.isGeometry?n=3*l.faces.length:l&&l.isBufferGeometry&&(n=l.attributes.normal.count);var c=new t.BufferGeometry,p=new t.Float32BufferAttribute(2*n*3,3);c.setAttribute("position",p),t.LineSegments.call(this,c,new t.LineBasicMaterial({color:a,linewidth:s})),this.matrixAutoUpdate=!1,this.update()}return a.prototype=Object.create(t.LineSegments.prototype),a.prototype.constructor=a,a.prototype.update=function(){this.object.updateMatrixWorld(!0),i.getNormalMatrix(this.object.matrixWorld);var t=this.object.matrixWorld,a=this.geometry.attributes.position,s=this.object.geometry;if(s&&s.isGeometry)for(var n=s.vertices,l=s.faces,c=0,p=0,y=l.length;p<y;p++)for(var u=l[p],m=0,f=u.vertexNormals.length;m<f;m++){var d=n[u[o[m]]],h=u.vertexNormals[m];e.copy(d).applyMatrix4(t),r.copy(h).applyMatrix3(i).normalize().multiplyScalar(this.size).add(e),a.setXYZ(c,e.x,e.y,e.z),c+=1,a.setXYZ(c,r.x,r.y,r.z),c+=1}else if(s&&s.isBufferGeometry){var x=s.attributes.position,g=s.attributes.normal;for(c=0,m=0,f=x.count;m<f;m++)e.set(x.getX(m),x.getY(m),x.getZ(m)).applyMatrix4(t),r.set(g.getX(m),g.getY(m),g.getZ(m)),r.applyMatrix3(i).normalize().multiplyScalar(this.size).add(e),a.setXYZ(c,e.x,e.y,e.z),c+=1,a.setXYZ(c,r.x,r.y,r.z),c+=1}a.needsUpdate=!0},a});
+//# sourceMappingURL=../sourcemaps/helpers/VertexNormalsHelper.js.map

@@ -1,0 +1,9 @@
+/**
+ * skylark-threejs-ex - A version of threejs extentions library that ported to running on skylarkjs
+ * @author Hudaokeji, Inc.
+ * @version v0.9.0
+ * @link https://github.com/skylark-integration/skylark-threejs-ex/
+ * @license MIT
+ */
+define(function(){"use strict";const e=function(){};e.prototype={constructor:e,applyProperties:function(e,n,o){if(void 0===e||null===e||void 0===n||null===n)return;let t,s,r;for(t in n)s="set"+t.substring(0,1).toLocaleUpperCase()+t.substring(1),r=n[t],"function"==typeof e[s]?e[s](r):(e.hasOwnProperty(t)||o)&&(e[t]=r)}};const n=function(e){this.parser=e,this.logging={enabled:!1,debug:!1}};n.prototype={constructor:n,handlePayload:function(n){if(n.logging&&(this.logging.enabled=!0===n.logging.enabled,this.logging.debug=!0===n.logging.debug),"parse"===n.cmd){let o=this,t={callbackOnAssetAvailable:function(e){self.postMessage(e)},callbackOnProgress:function(e){o.logging.enabled&&o.logging.debug&&console.debug("WorkerRunner: progress: "+e)}},s=this.parser;"function"==typeof s.setLogging&&s.setLogging(this.logging.enabled,this.logging.debug);let r=new e;r.applyProperties(s,n.params,!1),r.applyProperties(s,t,!1);let l=n.data.input,a="execute";"function"==typeof s.getParseFunctionName&&(a=s.getParseFunctionName()),n.usesMeshDisassembler||s[a](l,n.data.options),this.logging.enabled&&console.log("WorkerRunner: Run complete!"),self.postMessage({cmd:"completeOverall",msg:"WorkerRunner completed run."})}else console.error("WorkerRunner: Received unknown command: "+n.cmd)}};const o=function(e){this.payloadHandler=e;let n=this;self.addEventListener("message",function(e){n.processMessage(e.data)},!1)};return o.prototype={constructor:o,processMessage:function(e){this.payloadHandler.handlePayload(e)}},{WorkerRunner:o,DefaultWorkerPayloadHandler:n,ObjectManipulator:e}});
+//# sourceMappingURL=../../../../sourcemaps/loaders/obj2/worker/parallel/WorkerRunner.js.map

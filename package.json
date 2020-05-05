@@ -22,7 +22,8 @@
   "license": "MIT",
   "dependencies": {
     "skylark-langx": "git+https://github.com/skylark-langx/skylark-langx.git#master",
-    "skylark-threejs": "git+https://github.com/skylark-integration/skylark-threejs.git#master"
+    "skylark-threejs": "git+https://github.com/skylark-integration/skylark-threejs.git#master",
+    "skylark-zlib": "git+https://github.com/skylark-integration/skylark-zlib.git#master"
   },
   "files": [
     "demo/",

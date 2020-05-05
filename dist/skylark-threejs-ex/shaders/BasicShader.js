@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs"],function(i){return i.BasicShader={uniforms:{},vertexShader:["void main() {","\tgl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );","}"].join("\n"),fragmentShader:["void main() {","\tgl_FragColor = vec4( 1.0, 0.0, 0.0, 0.5 );","}"].join("\n")},i.BasicShader});
+define(function(){"use strict";return{uniforms:{},vertexShader:["void main() {","\tgl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );","}"].join("\n"),fragmentShader:["void main() {","\tgl_FragColor = vec4( 1.0, 0.0, 0.0, 0.5 );","}"].join("\n")}});
 //# sourceMappingURL=../sourcemaps/shaders/BasicShader.js.map

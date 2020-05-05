@@ -1,55 +1,28 @@
-define([
-	"skylark-threejs"
-],function(THREE){
-	/**
-	 * @author alteredq / http://alteredqualia.com/
-	 *
-	 * Colorify shader
-	 */
-
-	THREE.ColorifyShader = {
-
-		uniforms: {
-
-			"tDiffuse": { value: null },
-			"color": { value: new THREE.Color( 0xffffff ) }
-
-		},
-
-		vertexShader: [
-
-			"varying vec2 vUv;",
-
-			"void main() {",
-
-			"	vUv = uv;",
-			"	gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
-
-			"}"
-
-		].join( "\n" ),
-
-		fragmentShader: [
-
-			"uniform vec3 color;",
-			"uniform sampler2D tDiffuse;",
-
-			"varying vec2 vUv;",
-
-			"void main() {",
-
-			"	vec4 texel = texture2D( tDiffuse, vUv );",
-
-			"	vec3 luma = vec3( 0.299, 0.587, 0.114 );",
-			"	float v = dot( texel.xyz, luma );",
-
-			"	gl_FragColor = vec4( v * color, texel.w );",
-
-			"}"
-
-		].join( "\n" )
-
-	};
-	
-	return THREE.ColorifyShader;
+define(["skylark-threejs"], function (THREE) {
+    'use strict';
+    var ColorifyShader = {
+        uniforms: {
+            'tDiffuse': { value: null },
+            'color': { value: new THREE.Color(16777215) }
+        },
+        vertexShader: [
+            'varying vec2 vUv;',
+            'void main() {',
+            '\tvUv = uv;',
+            '\tgl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );',
+            '}'
+        ].join('\n'),
+        fragmentShader: [
+            'uniform vec3 color;',
+            'uniform sampler2D tDiffuse;',
+            'varying vec2 vUv;',
+            'void main() {',
+            '\tvec4 texel = texture2D( tDiffuse, vUv );',
+            '\tvec3 luma = vec3( 0.299, 0.587, 0.114 );',
+            '\tfloat v = dot( texel.xyz, luma );',
+            '\tgl_FragColor = vec4( v * color, texel.w );',
+            '}'
+        ].join('\n')
+    };
+    return ColorifyShader;
 });

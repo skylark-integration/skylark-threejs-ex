@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs","./Pass"],function(e,r){return e.ClearPass=function(r,a){e.Pass.call(this),this.needsSwap=!1,this.clearColor=void 0!==r?r:0,this.clearAlpha=void 0!==a?a:0},e.ClearPass.prototype=Object.assign(Object.create(e.Pass.prototype),{constructor:e.ClearPass,render:function(e,r,a){var s,l;this.clearColor&&(s=e.getClearColor().getHex(),l=e.getClearAlpha(),e.setClearColor(this.clearColor,this.clearAlpha)),e.setRenderTarget(this.renderToScreen?null:a),e.clear(),this.clearColor&&e.setClearColor(s,l)}}),e.ClearPass});
+define(["../postprocessing/Pass"],function(e){"use strict";var r=function(r,t){e.call(this),this.needsSwap=!1,this.clearColor=void 0!==r?r:0,this.clearAlpha=void 0!==t?t:0};return r.prototype=Object.assign(Object.create(e.prototype),{constructor:r,render:function(e,r,t){var o,l;this.clearColor&&(o=e.getClearColor().getHex(),l=e.getClearAlpha(),e.setClearColor(this.clearColor,this.clearAlpha)),e.setRenderTarget(this.renderToScreen?null:t),e.clear(),this.clearColor&&e.setClearColor(o,l)}}),r});
 //# sourceMappingURL=../sourcemaps/postprocessing/ClearPass.js.map
