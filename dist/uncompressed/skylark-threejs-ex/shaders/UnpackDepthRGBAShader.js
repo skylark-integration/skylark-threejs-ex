@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var UnpackDepthRGBAShader = {
         uniforms: {
@@ -23,5 +25,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  UnpackDepthRGBAShader ;
+    return  threex.shaders.UnpackDepthRGBAShader = UnpackDepthRGBAShader;
 });

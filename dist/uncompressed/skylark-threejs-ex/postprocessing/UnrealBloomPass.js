@@ -1,10 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/CopyShader',
     '../shaders/LuminosityHighPassShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     CopyShader, 
     LuminosityHighPassShader
@@ -234,5 +236,6 @@ define([
     });
     UnrealBloomPass.BlurDirectionX = new THREE.Vector2(1, 0);
     UnrealBloomPass.BlurDirectionY = new THREE.Vector2(0, 1);
-    return UnrealBloomPass;
+
+    return threex.postprocessing.UnrealBloomPass = UnrealBloomPass;
 });

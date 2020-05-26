@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var GeometryUtils = {
         hilbert2D: function (center, size, iterations, v0, v1, v2, v3) {
@@ -64,5 +68,5 @@ define([
             return vec;
         }
     };
-    return GeometryUtils;
+    return threex.utils.GeometryUtils = GeometryUtils;
 });

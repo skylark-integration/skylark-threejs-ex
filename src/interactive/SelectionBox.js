@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SelectionBox = function () {
         var frustum = new THREE.Frustum();
@@ -130,5 +134,5 @@ define([
         return SelectionBox;
     }();
 
-    return SelectionBox;
+    return threex.interactive.SelectionBox  =SelectionBox;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function Pass() {
         this.enabled = true;
@@ -39,5 +43,6 @@ define([
         });
         return FullScreenQuad;
     }();
-    return Pass;
+
+    return threex.postprocessing.Pass = Pass;
 });

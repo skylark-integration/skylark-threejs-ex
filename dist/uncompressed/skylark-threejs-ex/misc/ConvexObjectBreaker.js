@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../geometries/ConvexGeometry'
 ], function (
     THREE, 
+    threex,
     ConvexGeometry
 ) {
     'use strict';
@@ -284,5 +286,6 @@ define([
             resultPlane.constant = -referencePoint.dot(resultPlane.normal);
         };
     }();
-    return ConvexObjectBreaker;
+
+    return threex.misc.ConvexObjectBreaker = ConvexObjectBreaker;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MorphBlendMesh = function (geometry, material) {
         THREE.Mesh.call(this, geometry, material);
@@ -180,5 +184,6 @@ define([
             }
         }
     });
-    return MorphBlendMesh;
+
+    return threex.misc.MorphBlendMesh = MorphBlendMesh;
 });

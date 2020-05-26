@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Gyroscope = function () {
         THREE.Object3D.call(this);
@@ -33,5 +37,6 @@ define([
             }
         };
     }();
-    return Gyroscope;
+
+    return threex.misc.Gyroscope = Gyroscope;
 });

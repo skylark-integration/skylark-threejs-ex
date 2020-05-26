@@ -1,7 +1,13 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     const inverseProjectionMatrix = new THREE.Matrix4();
-    return class Frustum {
+    class Frustum {
         constructor(data) {
             data = data || {};
             this.vertices = {
@@ -81,4 +87,6 @@ define(["skylark-threejs"], function (THREE) {
             }
         }
     };
+
+    return threex.csm.Frustum = Frustum;
 });

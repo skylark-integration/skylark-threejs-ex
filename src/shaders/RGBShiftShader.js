@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var RGBShiftShader = {
         uniforms: {
@@ -27,5 +29,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return RGBShiftShader ;
+    return threex.shaders.RGBShiftShader = RGBShiftShader;
 });

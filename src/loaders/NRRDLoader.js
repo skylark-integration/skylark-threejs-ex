@@ -1,11 +1,13 @@
 define([
     "skylark-threejs",
+    "../threex",
     'skylark-zlib/Gunzip',
     '../misc/Volume'
 ], function (
     THREE, 
+    threex,
     Gunzip, 
-    c
+    Volume
 ) {
     'use strict';
     var NRRDLoader = function (manager) {
@@ -373,5 +375,5 @@ define([
             }
         }
     });
-    return NRRDLoader;
+    return threex.loaders.NRRDLoader = NRRDLoader;
 });

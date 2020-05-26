@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var AMFLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -301,5 +305,5 @@ define([
         }
     });
 
-    return AMFLoader;
+    return threex.loaders.AMFLoader = AMFLoader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MeshSurfaceSampler = function () {
         var _face = new THREE.Triangle();
@@ -87,5 +91,5 @@ define([
         };
         return MeshSurfaceSampler;
     }();
-    return  MeshSurfaceSampler;
+    return  threex.math.MeshSurfaceSampler = MeshSurfaceSampler;
 });

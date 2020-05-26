@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DepthLimitedBlurShader = {
         defines: {
@@ -110,6 +116,6 @@ define(["skylark-threejs"], function (THREE) {
         }
     };
 
-    return DepthLimitedBlurShader;
+    return threex.shaders.DepthLimitedBlurShader = DepthLimitedBlurShader;
     
 });

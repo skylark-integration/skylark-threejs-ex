@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SubdivisionModifier = function (subdivisions) {
         this.subdivisions = subdivisions === undefined ? 1 : subdivisions;
@@ -200,5 +204,6 @@ define([
                 geometry.faceVertexUvs = newUVs;
         };
     }());
-    return SubdivisionModifier;
+
+    return threex.modifiers.SubdivisionModifier = SubdivisionModifier;
 });

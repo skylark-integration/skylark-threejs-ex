@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var AWDLoader = function () {
         var AWD_FIELD_INT8 = 1, AWD_FIELD_INT16 = 2, AWD_FIELD_INT32 = 3, AWD_FIELD_UINT8 = 4, AWD_FIELD_UINT16 = 5, AWD_FIELD_UINT32 = 6, AWD_FIELD_FLOAT32 = 7, AWD_FIELD_FLOAT64 = 8, AWD_FIELD_BOOL = 21, AWD_FIELD_BADDR = 23, AWD_FIELD_VECTOR2x1 = 41, AWD_FIELD_VECTOR3x1 = 42, AWD_FIELD_VECTOR4x1 = 43, AWD_FIELD_MTX3x2 = 44, AWD_FIELD_MTX3x3 = 45, AWD_FIELD_MTX4x3 = 46, AWD_FIELD_MTX4x4 = 47, BOOL = 21, BADDR = 23, UINT8 = 4, UINT16 = 5, FLOAT32 = 7, FLOAT64 = 8;
@@ -660,5 +664,6 @@ define([
         });
         return AWDLoader;
     }();
-    return AWDLoader;
+
+    return threex.loaders.AWDLoader = AWDLoader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var NURBSUtils = {
         findSpan: function (p, u, U) {
@@ -219,5 +223,5 @@ define([
         }
     };
     
-    return NURBSUtils;
+    return threex.curves.NURBSUtils = NURBSUtils;
 });

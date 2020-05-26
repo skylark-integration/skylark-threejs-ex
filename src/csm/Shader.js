@@ -1,6 +1,12 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
-    return {
+    return threex.csm.Shader = {
         lights_fragment_begin: `
 GeometricContext geometry;
 

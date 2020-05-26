@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var PixelShader = {
         uniforms: {
@@ -25,5 +27,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return PixelShader ;
+    return threex.shaders.PixelShader = PixelShader;
 });

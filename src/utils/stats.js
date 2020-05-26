@@ -1,4 +1,6 @@
-define([],function(){
+define([
+    "../threex"
+],function (threex) {
 
 	/**
 	 * @author mrdoob / http://mrdoob.com/
@@ -170,6 +172,6 @@ define([],function(){
 
 	};
 
-	return  Stats;
+	return  threex.utils.Stats = Stats;
 
 });

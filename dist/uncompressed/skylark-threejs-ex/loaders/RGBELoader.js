@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var RGBELoader = function (manager) {
         THREE.DataTextureLoader.call(this, manager);
@@ -284,5 +288,6 @@ define([
             return THREE.DataTextureLoader.prototype.load.call(this, url, onLoadCallback, onProgress, onError);
         }
     });
-    return RGBELoader;
+
+    return threex.loaders.RGBELoader = RGBELoader;
 });

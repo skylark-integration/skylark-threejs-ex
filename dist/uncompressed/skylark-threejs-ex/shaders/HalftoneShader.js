@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var HalftoneShader = {
         uniforms: {
@@ -209,5 +211,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return HalftoneShader;
+    return threex.shaders.HalftoneShader = HalftoneShader;
 });

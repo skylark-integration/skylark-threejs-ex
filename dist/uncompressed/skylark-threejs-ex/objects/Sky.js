@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Sky = function () {
         var shader = Sky.SkyShader;
@@ -132,5 +136,5 @@ define([
             '}'
         ].join('\n')
     };
-    return Sky;
+    return threex.objects.Sky = Sky;
 });

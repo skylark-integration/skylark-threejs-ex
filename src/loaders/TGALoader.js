@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TGALoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -300,5 +304,5 @@ define([
             return useOffscreen ? canvas.transferToImageBitmap() : canvas;
         }
     });
-    return  TGALoader;
+    return  threex.loaders.TGALoader = TGALoader;
 });

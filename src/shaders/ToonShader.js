@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ToonShader1 = {
         uniforms: {
@@ -183,7 +187,7 @@ define([
             '}'
         ].join('\n')
     };
-    return {
+    return threex.shaders.ToonShader = {
         ToonShader1,
         ToonShader2,
         ToonShaderHatching,

@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var GodRaysDepthMaskShader = {
         uniforms: { tInput: { value: null } },
@@ -116,7 +122,7 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return {
+    return threex.shaders.GodRayShader = {
         GodRaysDepthMaskShader,
         GodRaysGenerateShader,
         GodRaysCombineShader,

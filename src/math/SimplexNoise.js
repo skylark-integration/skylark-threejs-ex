@@ -1,4 +1,10 @@
-define(function () {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SimplexNoise = function (r) {
         if (r == undefined)
@@ -931,5 +937,5 @@ define(function () {
         return 27 * (n0 + n1 + n2 + n3 + n4);
     };
 
-    return SimplexNoise;
+    return threex.math.SimplexNoise = SimplexNoise;
 });

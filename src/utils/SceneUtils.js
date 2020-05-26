@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SceneUtils = {
         createMeshesFromInstancedMesh: function (instancedMesh) {
@@ -34,5 +38,5 @@ define([
             parent.attach(child);
         }
     };
-    return SceneUtils;
+    return threex.utils.SceneUtils = SceneUtils;
 });

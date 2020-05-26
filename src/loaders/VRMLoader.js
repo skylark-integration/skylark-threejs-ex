@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     './GLTFLoader'
 ], function (
     THREE, 
+    threex,
     GLTFLoader
 ) {
     'use strict';
@@ -33,5 +35,5 @@ define([
         return VRMLoader;
     }();
     
-    return VRMLoader;
+    return threex.loaders.VRMLoader = VRMLoader;
 });

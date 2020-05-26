@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ColorConverter = {
         setHSV: function (color, h, s, v) {
@@ -58,5 +62,5 @@ define([
             return target;
         }
     };
-    return ColorConverter;
+    return threex.math.ColorConverter = ColorConverter;
 });

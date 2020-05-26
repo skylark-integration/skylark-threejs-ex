@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../shaders/UnpackDepthRGBAShader'
-], function (THREE,UnpackDepthRGBAShader) {
+], function (
+    THREE,
+    threex,
+    UnpackDepthRGBAShader
+) {
     'use strict';
     var ShadowMapViewer = function (light) {
         var scope = this;
@@ -105,5 +110,5 @@ define([
     };
     ShadowMapViewer.prototype.constructor = ShadowMapViewer;
 
-    return ShadowMapViewer;
+    return threex.utils.ShadowMapViewer = ShadowMapViewer;
 });

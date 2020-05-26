@@ -1,11 +1,13 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass',
     '../shaders/CopyShader',
     '../shaders/LuminosityShader',
     '../shaders/ToneMapShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     CopyShader, 
     LuminosityShader, 
@@ -224,5 +226,5 @@ define([
             }
         }
     });
-    return AdaptiveToneMappingPass;
+    return threex.postprocessing.AdaptiveToneMappingPass = AdaptiveToneMappingPass;
 });

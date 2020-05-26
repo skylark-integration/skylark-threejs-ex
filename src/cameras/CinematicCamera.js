@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../shaders/BokehShader2'
-], function (THREE, BokehShader) {
+], function (
+    THREE,
+    threex,
+    BokehShader
+) {
     'use strict';
     var CinematicCamera = function (fov, aspect, near, far) {
         THREE.PerspectiveCamera.call(this, fov, aspect, near, far);
@@ -122,5 +127,5 @@ define([
             renderer.setRenderTarget(currentRenderTarget);
         }
     };
-    return CinematicCamera;
+    return threex.cameras.CinematicCamera = CinematicCamera;
 });

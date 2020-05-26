@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var MirrorShader = {
         uniforms: {
@@ -32,5 +34,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  MirrorShader ;
+    return  threex.shaders.MirrorShader = MirrorShader;
 });

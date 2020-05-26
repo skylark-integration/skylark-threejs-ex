@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function LightProbeHelper(lightProbe, size) {
         this.lightProbe = lightProbe;
@@ -70,5 +74,5 @@ define([
         this.material.uniforms.intensity.value = this.lightProbe.intensity;
     };
     
-    return LightProbeHelper;
+    return threex.helpers.LightProbeHelper = LightProbeHelper;
 });

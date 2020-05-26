@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TransformControls = function (camera, domElement) {
         if (domElement === undefined) {
@@ -422,5 +426,6 @@ define([
         constructor: TransformControls,
         isTransformControls: true
     });
-    return TransformControls;
+
+    return threex.controls.TransformControls = TransformControls;
 });

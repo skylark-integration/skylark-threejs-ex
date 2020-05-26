@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var camera, scene, renderer, group;
     function init(canvas, width, height, pixelRatio, path) {
@@ -63,5 +69,5 @@ define(["skylark-threejs"], function (THREE) {
         var x = Math.sin(seed++) * 10000;
         return x - Math.floor(x);
     }
-    return init;
+    return threex.offscreen.scene = init;
 });

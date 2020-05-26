@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var PDBLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -713,5 +717,6 @@ define([
             return buildGeometry();
         }
     });
-    return PDBLoader;
+
+    return threex.loaders.PDBLoader = PDBLoader;
 });

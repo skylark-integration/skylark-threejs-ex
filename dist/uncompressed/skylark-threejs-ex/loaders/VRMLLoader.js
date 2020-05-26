@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
 //    '../libs/chevrotain.module.min'
-], function (THREE, chevrotain) {
+], function (
+    THREE, 
+    threex,
+    chevrotain
+) {
     'use strict';
     var VRMLLoader = function () {
         if (typeof chevrotain === 'undefined') {
@@ -1740,5 +1745,6 @@ define([
         };
         return VRMLLoader;
     }();
-    return VRMLLoader;
+
+    return threex.loaders.VRMLLoader = VRMLLoader;
 });

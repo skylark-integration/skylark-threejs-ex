@@ -1,20 +1,25 @@
 define([
-	"skylark-threejs"
-],function(THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+
 	/**
 	 * @author mrdoob / http://mrdoob.com/
 	 * @author Mugen87 / https://github.com/Mugen87
 	 */
 
-	THREE.BabylonLoader = function ( manager ) {
+	 function BabylonLoader( manager ) {
 
 		this.manager = ( manager !== undefined ) ? manager : THREE.DefaultLoadingManager;
 
 	};
 
-	THREE.BabylonLoader.prototype = {
+	BabylonLoader.prototype = {
 
-		constructor: THREE.BabylonLoader,
+		constructor: BabylonLoader,
 
 		load: function ( url, onLoad, onProgress, onError ) {
 
@@ -65,7 +70,7 @@ define([
 
 						var data = json.multiMaterials[ i ];
 
-						console.warn( 'THREE.BabylonLoader: Multi materials not yet supported.' );
+						console.warn( 'BabylonLoader: Multi materials not yet supported.' );
 
 						materials[ data.id ] = new THREE.MeshPhongMaterial();
 
@@ -257,5 +262,5 @@ define([
 
 	};
 	
-	return THREE.BabylonLoader ;
+	return threex.loaders.BabylonLoader = BabylonLoader;
 });

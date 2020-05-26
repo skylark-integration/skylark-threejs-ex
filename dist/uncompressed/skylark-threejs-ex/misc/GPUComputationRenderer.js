@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var GPUComputationRenderer = function (sizeX, sizeY, renderer) {
         this.variables = [];
@@ -149,5 +153,6 @@ define([
             return 'uniform sampler2D passThruTexture;\n' + '\n' + 'void main() {\n' + '\n' + '\tvec2 uv = gl_FragCoord.xy / resolution.xy;\n' + '\n' + '\tgl_FragColor = texture2D( passThruTexture, uv );\n' + '\n' + '}\n';
         }
     };
-    return GPUComputationRenderer;
+
+    return threex.misc.GPUComputationRenderer = GPUComputationRenderer;
 });

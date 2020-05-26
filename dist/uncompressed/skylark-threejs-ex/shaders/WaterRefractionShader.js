@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var WaterRefractionShader = {
         uniforms: {
@@ -44,5 +46,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  WaterRefractionShader ;
+    return  threex.shaders.WaterRefractionShader = WaterRefractionShader;
 });

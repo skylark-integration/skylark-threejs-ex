@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var TechnicolorShader = {
         uniforms: { 'tDiffuse': { value: null } },
@@ -19,5 +21,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  TechnicolorShader ;
+    return  threex.shaders.TechnicolorShader = TechnicolorShader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var VolumeSlice = function (volume, index, axis) {
         var slice = this;
@@ -104,5 +108,5 @@ define([
             this.geometryNeedsUpdate = false;
         }
     };
-    return VolumeSlice;
+    return threex.misc.VolumeSlice = VolumeSlice;
 });

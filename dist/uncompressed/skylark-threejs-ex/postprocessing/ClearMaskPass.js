@@ -1,4 +1,10 @@
-define(['../postprocessing/Pass'], function (Pass) {
+define([
+    "../threex",
+    '../postprocessing/Pass'
+], function (
+    threex,
+    Pass
+) {
     'use strict';
     var ClearMaskPass = function () {
         Pass.call(this);
@@ -11,5 +17,6 @@ define(['../postprocessing/Pass'], function (Pass) {
             renderer.state.buffers.stencil.setTest(false);
         }
     });
-    return ClearMaskPass;
+
+    return threex.postprocessing.ClearMaskPass = ClearMaskPass;
 });

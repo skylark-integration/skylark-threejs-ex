@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     const Constants = {
         Handedness: Object.freeze({
@@ -261,7 +263,7 @@ define(function () {
             });
         }
     }
-    return {
+    return threex.utils.motion ={
         Constants,
         MotionController,
         fetchProfile,

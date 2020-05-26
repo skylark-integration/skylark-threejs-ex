@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var CameraControls = function (object, domElement) {
         if (domElement === undefined)
@@ -640,5 +646,5 @@ define(["skylark-threejs"], function (THREE) {
     CameraControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     CameraControls.prototype.constructor = CameraControls;
 
-    return CameraControls;
+    return threex.controls.experimental.CameraControls = CameraControls;
 });

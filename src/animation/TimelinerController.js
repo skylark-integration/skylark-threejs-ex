@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TimelinerController = function TimelinerController(scene, trackInfo, onUpdate) {
         this._scene = scene;
@@ -123,5 +127,5 @@ define([
         }
     };
 
-    return TimelinerController;
+    return threex.animation.TimelinerController = TimelinerController;
 });

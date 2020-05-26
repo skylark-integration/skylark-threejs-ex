@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var OrbitControls = function (object, domElement) {
         if (domElement === undefined)
@@ -614,5 +618,5 @@ define([
     OrbitControls.prototype.constructor = OrbitControls;
 
     
-    return     OrbitControls;
+    return   threex.controls.OrbitControls = OrbitControls;
 });

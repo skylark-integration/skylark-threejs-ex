@@ -1,4 +1,10 @@
-define(['../postprocessing/Pass'], function (Pass) {
+define([
+    "../threex",
+    '../postprocessing/Pass'
+], function (
+    threex,
+    Pass
+) {
     'use strict';
     var ClearPass = function (clearColor, clearAlpha) {
         Pass.call(this);
@@ -22,5 +28,6 @@ define(['../postprocessing/Pass'], function (Pass) {
             }
         }
     });
-    return ClearPass;
+
+    return threex.postprocessing.ClearPass = ClearPass;
 });

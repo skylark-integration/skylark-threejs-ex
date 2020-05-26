@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TrackballControls = function (object, domElement) {
         if (domElement === undefined)
@@ -411,5 +415,5 @@ define([
     TrackballControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     TrackballControls.prototype.constructor = TrackballControls;
 
-    return TrackballControls;
+    return threex.controls.TrackballControls = TrackballControls;
 });

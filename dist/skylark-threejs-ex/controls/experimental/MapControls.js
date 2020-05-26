@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs"],function(t){"use strict";var e=function(e,o){CameraControls.call(this,e,o),this.mouseButtons.LEFT=t.MOUSE.PAN,this.mouseButtons.RIGHT=t.MOUSE.ROTATE,this.touches.ONE=t.TOUCH.PAN,this.touches.TWO=t.TOUCH.DOLLY_ROTATE};return(e.prototype=Object.create(t.EventDispatcher.prototype)).constructor=e,MapControl});
+define(["skylark-threejs","../../threex"],function(t,e){"use strict";var o=function(e,o){CameraControls.call(this,e,o),this.mouseButtons.LEFT=t.MOUSE.PAN,this.mouseButtons.RIGHT=t.MOUSE.ROTATE,this.touches.ONE=t.TOUCH.PAN,this.touches.TWO=t.TOUCH.DOLLY_ROTATE};return(o.prototype=Object.create(t.EventDispatcher.prototype)).constructor=o,e.controls.experimental.MapControl=MapControl});
 //# sourceMappingURL=../../sourcemaps/controls/experimental/MapControls.js.map

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function TubePainter() {
         const BUFFER_SIZE = 1000000 * 3;
@@ -119,5 +123,5 @@ define([
             update: update
         };
     }
-    return TubePainter;
+    return threex.misc.TubePainter = TubePainter;
 });

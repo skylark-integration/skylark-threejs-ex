@@ -1,4 +1,6 @@
-define(function () {
+define([
+   "../threex",
+],function (threex) {
     'use strict';
     var TypedGeometryExporter = function () {
     };
@@ -36,5 +38,5 @@ define(function () {
             return output;
         }
     };
-    return TypedGeometryExporter;
+    return threex.exporters.TypedGeometryExporter = TypedGeometryExporter;
 });

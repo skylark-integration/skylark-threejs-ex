@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var BokehShader = {
         uniforms: {
@@ -265,5 +271,5 @@ define(["skylark-threejs"], function (THREE) {
         ].join('\n')
     };
 
-    return  BokehShader;
+    return  threex.shaders.BokehShader2 = BokehShader;
 });

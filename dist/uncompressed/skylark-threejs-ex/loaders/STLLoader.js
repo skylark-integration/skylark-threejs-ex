@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var STLLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -186,5 +190,6 @@ define([
             return isBinary(binData) ? parseBinary(binData) : parseASCII(ensureString(data));
         }
     });
-    return STLLoader;
+
+    return threex.loaders.STLLoader = STLLoader;
 });

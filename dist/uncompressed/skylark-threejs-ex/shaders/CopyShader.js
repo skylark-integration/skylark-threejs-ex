@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var CopyShader = {
         uniforms: {
@@ -22,5 +24,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return CopyShader;
+    return threex.shaders.CopyShader = CopyShader;
 });

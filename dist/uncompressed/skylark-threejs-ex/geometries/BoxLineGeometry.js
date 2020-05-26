@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var BoxLineGeometry = function (width, height, depth, widthSegments, heightSegments, depthSegments) {
         THREE.BufferGeometry.call(this);
@@ -44,5 +48,5 @@ define([
     BoxLineGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
     BoxLineGeometry.prototype.constructor = BoxLineGeometry;
 
-    return BoxLineGeometry;
+    return threex.geometries.BoxLineGeometry = BufferGeometry;
 });

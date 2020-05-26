@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../loaders/MD2Loader'
 ], function (
     THREE, 
+    threex,
     MD2Loader
 ) {
     'use strict';
@@ -163,5 +165,5 @@ define([
                 scope.onLoadComplete();
         }
     };
-    return MD2Character;
+    return threex.misc.MD2Character = MD2Character;
 });

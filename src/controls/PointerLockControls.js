@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var PointerLockControls = function (camera, domElement) {
         if (domElement === undefined) {
@@ -83,5 +87,5 @@ define([
     PointerLockControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     PointerLockControls.prototype.constructor = PointerLockControls;
 
-    return PointerLockControls;
+    return threex.controls.PointerLockControls = PointerLockControls;
 });

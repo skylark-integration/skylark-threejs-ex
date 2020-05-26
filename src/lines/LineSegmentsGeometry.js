@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var LineSegmentsGeometry = function () {
         THREE.InstancedBufferGeometry.call(this);
@@ -189,5 +193,6 @@ define([
             return this.applyMatrix4(matrix);
         }
     });
-    return LineSegmentsGeometry;
+
+    return threex.lins.LineSegmentsGeometry = LineSegmentsGeometry;
 });

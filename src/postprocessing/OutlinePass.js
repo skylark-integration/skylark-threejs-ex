@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/CopyShader'
 ], function (
-    THREE, 
+    THREE,
+    threex, 
     Pass, 
     CopyShader
 ) {
@@ -353,5 +355,6 @@ define([
     });
     OutlinePass.BlurDirectionX = new THREE.Vector2(1, 0);
     OutlinePass.BlurDirectionY = new THREE.Vector2(0, 1);
-    return OutlinePass;
+
+    return threex.postprocessing.OutlinePass = OutlinePass;
 });

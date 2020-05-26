@@ -1,8 +1,14 @@
 define([
     "skylark-threejs",
+    "../threex",
     './CCDIKSolver',
     './MMDPhysics'
-], function (THREE, CCDIKSolver, MMDPhysics) {
+], function (
+    THREE, 
+    threex,
+    CCDIKSolver, 
+    MMDPhysics
+) {
     'use strict';
     var MMDAnimationHelper = function () {
         function MMDAnimationHelper(params) {
@@ -498,5 +504,6 @@ define([
         };
         return MMDAnimationHelper;
     }();
-    return MMDAnimationHelper;
+
+    return threex.animation.MMDAnimationHelper = MMDAnimationHelper;
 });

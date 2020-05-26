@@ -1,4 +1,10 @@
-define(function () {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var interval = null;
     var result = null;
@@ -24,5 +30,5 @@ define(function () {
         }
         result.textContent = number;
     }
-    return initJank;
+    return threex.offscreen.jank = initJank;
 });

@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../loaders/TGALoader',
     '../libs/mmdparser'
 ], function (
     THREE, 
+    threex,
     TGALoader, 
     MMDParser
 ) {
@@ -961,5 +963,6 @@ define([
         });
         return MMDLoader;
     }();
-    return MMDLoader;
+
+    return threex.loaders.MMDLoader = MMDLoader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     var LensflareElement = function (texture, size, distance, color) {
         this.texture = texture;
         this.size = size || 1;
@@ -94,5 +98,5 @@ define([
         return geometry;
     }();
 
-    return  LensflareElement;
+    return  threex.objects.LensflareElement = LensflareElement;
 });

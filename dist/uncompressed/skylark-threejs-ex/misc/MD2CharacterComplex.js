@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../loaders/MD2Loader',
     './MorphBlendMesh'
 ], function (
     THREE, 
+    threex,
     MD2Loader, 
     MorphBlendMesh
 ) {
@@ -320,5 +322,5 @@ define([
             return k === 1 ? 1 : -Math.pow(2, -10 * k) + 1;
         }
     };
-    return MD2CharacterComplex;
+    return threex.misc.MD2CharacterComplex = MD2CharacterComplex;
 });

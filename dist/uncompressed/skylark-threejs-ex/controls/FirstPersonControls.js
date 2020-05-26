@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var FirstPersonControls = function (object, domElement) {
         if (domElement === undefined) {
@@ -238,5 +242,5 @@ define([
         setOrientation(this);
     };
     
-    return FirstPersonControls;
+    return threex.controls.FirstPersonControls = FirstPersonControls;
 });

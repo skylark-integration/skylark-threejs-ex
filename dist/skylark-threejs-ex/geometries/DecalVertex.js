@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs"],function(t){"use strict";var n=function(t,n){this.position=t,this.normal=n};return n.prototype.clone=function(){return new this.constructor(this.position.clone(),this.normal.clone())},n});
+define(["skylark-threejs","../threex"],function(t,e){"use strict";var n=function(t,e){this.position=t,this.normal=e};return n.prototype.clone=function(){return new this.constructor(this.position.clone(),this.normal.clone())},e.geometries.DecalVertex=n});
 //# sourceMappingURL=../sourcemaps/geometries/DecalVertex.js.map

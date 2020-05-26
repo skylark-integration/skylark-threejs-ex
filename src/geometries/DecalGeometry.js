@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DecalGeometry = function (mesh, position, orientation, size) {
         THREE.BufferGeometry.call(this);
@@ -161,5 +165,6 @@ define([
     };
     DecalGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
     DecalGeometry.prototype.constructor = DecalGeometry;
-    return DecalGeometry;
+
+    return threex.geometries.DecalGeometry = DecalGeometry;
 });

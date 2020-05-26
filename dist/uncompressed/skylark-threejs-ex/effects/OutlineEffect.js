@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var OutlineEffect = function (renderer, parameters) {
         parameters = parameters || {};
@@ -299,5 +303,6 @@ define([
             renderer.setRenderTarget(renderTarget);
         };
     };
-    return OutlineEffect;
+
+    return threex.effects.OutlineEffect = OutlineEffect;
 });

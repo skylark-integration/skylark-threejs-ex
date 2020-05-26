@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     './NURBSUtils'
-], function (THREE, NURBSUtils) {
+], function (
+    THREE,
+    threex,
+    NURBSUtils
+) {
     'use strict';
     var NURBSSurface = function (degree1, degree2, knots1, knots2, controlPoints) {
         this.degree1 = degree1;
@@ -27,5 +32,5 @@ define([
             NURBSUtils.calcSurfacePoint(this.degree1, this.degree2, this.knots1, this.knots2, this.controlPoints, u, v, target);
         }
     };
-    return NURBSSurface;
+    return threex.curves.NURBSSurface = NURBSSurface;
 });

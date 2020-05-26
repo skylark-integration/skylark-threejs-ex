@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SMAAEdgesShader = {
         defines: { 'SMAA_THRESHOLD': '0.1' },
@@ -266,7 +270,7 @@ define([
             '}'
         ].join('\n')
     };
-    return {
+    return threex.shaders.SMAAShader = {
         SMAAEdgesShader,
         SMAAWeightsShader,
         SMAABlendShader

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var CCDIKSolver = function () {
         function CCDIKSolver(mesh, iks) {
@@ -233,5 +237,5 @@ define([
         return CCDIKSolver;
     }();
 
-    return CCDIKSolver;
+    return threex.animation.CCDIKSolver = CCDIKSolver;
 });

@@ -1,8 +1,14 @@
 define([
+    "../threex",
     './LineSegments2',
     './LineGeometry',
     './LineMaterial'
-], function (LineSegments2, LineGeometry, LineMaterial) {
+], function (
+    threex,
+    LineSegments2, 
+    LineGeometry, 
+    LineMaterial
+) {
     'use strict';
     var Line2 = function (geometry, material) {
         LineSegments2.call(this);
@@ -14,5 +20,6 @@ define([
         constructor: Line2,
         isLine2: true
     });
-    return Line2;
+
+    return threex.lins.Line2 = Line2;
 });

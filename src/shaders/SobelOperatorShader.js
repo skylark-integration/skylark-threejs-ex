@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SobelOperatorShader = {
         uniforms: {
@@ -42,5 +46,5 @@ define([
             '}'
         ].join('\n')
     };
-    return  SobelOperatorShader ;
+    return  threex.shaders.SobelOperatorShader = SobelOperatorShader;
 });

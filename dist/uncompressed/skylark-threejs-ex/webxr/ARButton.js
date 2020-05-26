@@ -1,4 +1,6 @@
-define(function () {
+define([
+  "../threex"
+], function (threex) {
     'use strict';
     var ARButton = {
         createButton: function (renderer, sessionInit = {}) {
@@ -87,5 +89,5 @@ define(function () {
             }
         }
     };
-    return ARButton;
+    return threex.webxr.ARButton = ARButton;
 });

@@ -1,6 +1,10 @@
 define([
-   "skylark-threejs"
-], function (THREE) {
+   "skylark-threejs",
+    "../threex",   
+], function (
+   THREE,
+   threex
+) {
     'use strict';
     var TeapotBufferGeometry = function (size, segments, bottom, lid, body, fitLid, blinn) {
         var teapotPatches = [
@@ -1558,5 +1562,5 @@ define([
     TeapotBufferGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
     TeapotBufferGeometry.prototype.constructor = TeapotBufferGeometry;
 
-    return TeapotBufferGeometry;
+    return threex.geometries.TeapotBufferGeometry = TeapotBufferGeometry;
 });

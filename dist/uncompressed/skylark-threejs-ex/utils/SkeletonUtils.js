@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SkeletonUtils = {
         retarget: function () {
@@ -278,5 +282,5 @@ define([
             parallelTraverse(a.children[i], b.children[i], callback);
         }
     }
-    return SkeletonUtils;
+    return threex.utils.SkeletonUtils = SkeletonUtils;
 });

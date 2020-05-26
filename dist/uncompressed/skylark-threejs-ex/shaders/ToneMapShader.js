@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var ToneMapShader = {
         uniforms: {
@@ -45,5 +47,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  ToneMapShader ;
+    return  threex.shaders.ToneMapShader = ToneMapShader;
 });

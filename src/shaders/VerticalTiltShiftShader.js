@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var VerticalTiltShiftShader = {
         uniforms: {
@@ -34,5 +36,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return VerticalTiltShiftShader;
+    return threex.shaders.VerticalTiltShiftShader = VerticalTiltShiftShader;
 });

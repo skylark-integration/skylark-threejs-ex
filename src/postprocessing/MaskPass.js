@@ -1,6 +1,10 @@
 define([
+     "../threex",
     './Pass'
-], function (Pass) {
+], function (
+    threex,
+    Pass
+) {
     'use strict';
     var MaskPass = function (scene, camera) {
         Pass.call(this);
@@ -48,5 +52,5 @@ define([
             state.buffers.stencil.setLocked(true);
         }
     });
-    return  MaskPass;
+    return  threex.postprocessing.MaskPass = MaskPass;
 });

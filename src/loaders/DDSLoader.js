@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DDSLoader = function (manager) {
         THREE.CompressedTextureLoader.call(this, manager);
@@ -154,5 +158,5 @@ define([
             return dds;
         }
     });
-    return DDSLoader;
+    return threex.loaders.DDSLoader = DDSLoader;
 });

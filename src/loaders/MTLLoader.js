@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MTLLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -273,5 +277,5 @@ define([
             return texture;
         }
     };
-    return MTLLoader ;
+    return threex.loaders.MTLLoader = MTLLoader;
 });

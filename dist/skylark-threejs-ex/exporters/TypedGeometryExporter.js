@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(function(){"use strict";var r=function(){};return r.prototype={constructor:r,parse:function(r){var e={metadata:{version:4,type:"TypedGeometry",generator:"TypedGeometryExporter"}},t=["vertices","normals","uvs"];for(var n in t){for(var o=t[n],a=r[o],u=[],i=0,s=a.length;i<s;i++)u[i]=a[i];e[o]=u}var c=r.boundingSphere;return null!==c&&(e.boundingSphere={center:c.center.toArray(),radius:c.radius}),e}},r});
+define(["../threex"],function(r){"use strict";var e=function(){};return e.prototype={constructor:e,parse:function(r){var e={metadata:{version:4,type:"TypedGeometry",generator:"TypedGeometryExporter"}},t=["vertices","normals","uvs"];for(var n in t){for(var o=t[n],a=r[o],u=[],i=0,p=a.length;i<p;i++)u[i]=a[i];e[o]=u}var s=r.boundingSphere;return null!==s&&(e.boundingSphere={center:s.center.toArray(),radius:s.radius}),e}},r.exporters.TypedGeometryExporter=e});
 //# sourceMappingURL=../sourcemaps/exporters/TypedGeometryExporter.js.map

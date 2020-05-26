@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var PCDLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -230,5 +234,6 @@ define([
             return mesh;
         }
     });
-    return PCDLoader;
+
+    return threex.loaders.PCDLoader = PCDLoader;
 });

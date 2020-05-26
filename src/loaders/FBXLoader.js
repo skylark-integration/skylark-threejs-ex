@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     'skylark-zlib/Inflate',
     '../curves/NURBSCurve'
 ], function (
     THREE, 
+    threex,
     Inflate, 
     NURBSCurve
 ) {
@@ -2385,5 +2387,5 @@ define([
         }
         return FBXLoader;
     }();
-    return FBXLoader;
+    return threex.loaders.FBXLoader = FBXLoader;
 });

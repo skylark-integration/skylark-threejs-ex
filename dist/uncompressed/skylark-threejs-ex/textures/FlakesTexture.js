@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     class FlakesTexture {
         constructor(width = 512, height = 512) {
@@ -27,5 +29,5 @@ define(function () {
             return canvas;
         }
     }
-    return FlakesTexture;
+    return threex.textures.FlakesTexture = FlakesTexture;
 });

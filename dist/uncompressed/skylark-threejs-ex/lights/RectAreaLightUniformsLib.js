@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var RectAreaLightUniformsLib = {
         init: function () {
@@ -32788,5 +32792,5 @@ define([
             Object.assign(THREE.ShaderLib.physical.uniforms, ltc);
         }
     };
-    return RectAreaLightUniformsLib;
+    return threex.lights.RectAreaLightUniformsLib = RectAreaLightUniformsLib;
 });

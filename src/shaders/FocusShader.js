@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var FocusShader = {
         uniforms: {
@@ -52,5 +54,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return FocusShader ;
+    return threex.shaders.FocusShader = FocusShader;
 });

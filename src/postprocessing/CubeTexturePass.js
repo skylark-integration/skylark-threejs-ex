@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass'
 ], function (
     THREE, 
+    threex,
     Pass
 ) {
     'use strict';
@@ -47,5 +49,6 @@ define([
             renderer.autoClear = oldAutoClear;
         }
     });
-    return CubeTexturePass;
+
+    return threex.postprocessing.CubeTexturePass = CubeTexturePass;
 });

@@ -1,4 +1,5 @@
 define([
+    "../threex",
 // core
     './core/Node',
     './core/TempNode',
@@ -104,6 +105,7 @@ define([
     './postprocessing/NodePostProcessing'
 
 ],function (
+        threex,
         Node,
         TempNode,
         InputNode,
@@ -179,7 +181,7 @@ define([
 
 ) {
     'use strict';
-    return {
+    return threex.node.Nodes = {
         Node,
         TempNode,
         InputNode,

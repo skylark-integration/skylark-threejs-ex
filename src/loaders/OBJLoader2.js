@@ -1,10 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     './obj2/OBJLoader2Parser',
     './obj2/shared/MeshReceiver',
     './obj2/shared/MaterialHandler'
 ], function (
-    THREE, 
+    THREE,
+    threex, 
     OBJLoader2Parser, 
     MeshReceiver, 
     MaterialHandler
@@ -173,5 +175,5 @@ define([
             }
         }
     });
-    return OBJLoader2;
+    return threex.loaders.OBJLoader2 = OBJLoader2;
 });

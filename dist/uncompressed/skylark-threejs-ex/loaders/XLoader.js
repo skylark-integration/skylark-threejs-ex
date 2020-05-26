@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var XLoader = function () {
         var classCallCheck = function (instance, Constructor) {
@@ -1189,5 +1193,5 @@ define([
         return XLoader;
     }();
 
-    return XLoader;
+    return threex.loaders.XLoader = XLoader;
 });

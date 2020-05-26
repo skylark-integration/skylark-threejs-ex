@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var OBJLoader = function () {
         var object_pattern = /^[og]\s*(.+)?/;
@@ -425,7 +429,7 @@ define([
                 return container;
             }
         });
-        return OBJLoader;
+        return threex.loaders.OBJLoader = OBJLoader;
     }();
     return OBJLoader;
 });

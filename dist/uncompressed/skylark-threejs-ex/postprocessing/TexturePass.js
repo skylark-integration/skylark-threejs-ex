@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass',
     '../shaders/CopyShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     CopyShader
 ) {
@@ -42,5 +44,5 @@ define([
             renderer.autoClear = oldAutoClear;
         }
     });
-    return TexturePass;
+    return threex.postprocessing.TexturePass = TexturePass;
 });

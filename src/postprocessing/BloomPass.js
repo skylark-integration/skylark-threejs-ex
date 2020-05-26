@@ -1,10 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass',
     '../shaders/CopyShader',
     '../shaders/ConvolutionShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     CopyShader, 
     ConvolutionShader
@@ -83,5 +85,6 @@ define([
     });
     BloomPass.blurX = new THREE.Vector2(0.001953125, 0);
     BloomPass.blurY = new THREE.Vector2(0, 0.001953125);
-    return BloomPass;
+
+    return threex.postprocessing.BloomPass = BloomPass;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DragControls = function (_objects, _camera, _domElement) {
         var _plane = new THREE.Plane();
@@ -169,5 +173,6 @@ define([
     };
     DragControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     DragControls.prototype.constructor = DragControls;
-    return DragControls;
+
+    return threex.controls.DragControls = DragControls;
 });

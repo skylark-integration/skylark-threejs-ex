@@ -34,5 +34,5 @@ define([
             };
         }()
     });
-    return Wireframe ;
+    return threex.lins.Wireframe = Wireframe;
 });

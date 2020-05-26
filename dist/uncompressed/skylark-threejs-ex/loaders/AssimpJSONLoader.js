@@ -1,6 +1,11 @@
 define([
-	"skylark-threejs"
-],function(THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+
 	/**
 	 * @author Alexander Gessler / http://www.greentoken.de/
 	 * https://github.com/acgessler
@@ -14,15 +19,15 @@ define([
 	 * See webgl_loader_assimp2json example.
 	 */
 
-	THREE.AssimpJSONLoader = function ( manager ) {
+	function AssimpJSONLoader( manager ) {
 
 		this.manager = ( manager !== undefined ) ? manager : THREE.DefaultLoadingManager;
 
 	};
 
-	THREE.AssimpJSONLoader.prototype = {
+	AssimpJSONLoader.prototype = {
 
-		constructor: THREE.AssimpJSONLoader,
+		constructor: AssimpJSONLoader,
 
 		crossOrigin: 'anonymous',
 
@@ -48,14 +53,14 @@ define([
 
 					if ( metadata.format !== 'assimp2json' ) {
 
-						onError( 'THREE.AssimpJSONLoader: Not an assimp2json scene.' );
+						onError( 'AssimpJSONLoader: Not an assimp2json scene.' );
 						return;
 
 						// check major format version
 
 					} else if ( metadata.version < 100 && metadata.version >= 200 ) {
 
-						onError( 'THREE.AssimpJSONLoader: Unsupported assimp2json file format version.' );
+						onError( 'AssimpJSONLoader: Unsupported assimp2json file format version.' );
 						return;
 
 					}
@@ -295,5 +300,5 @@ define([
 
 	};
 	
-	return THREE.AssimpJSONLoader ;
+	return threex.loaders.AssimpJSONLoader = AssimpJSONLoader;
 });

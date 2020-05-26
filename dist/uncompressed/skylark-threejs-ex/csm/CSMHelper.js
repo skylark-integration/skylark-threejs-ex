@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     class CSMHelper extends THREE.Group {
         constructor(csm) {
@@ -143,5 +147,5 @@ define([
         }
     }
 
-    return CSMHelper;
+    return threex.csm.CSMHelper = CSMHelper;
 });

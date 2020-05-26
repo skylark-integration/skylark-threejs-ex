@@ -12,5 +12,5 @@ define([
         constructor: WireframeGeometry2,
         isWireframeGeometry2: true
     });
-    return WireframeGeometry2;
+    return threex.lins.WireframeGeometry2 = WireframeGeometry2;
 });

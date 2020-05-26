@@ -1,4 +1,10 @@
-define(function () {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function compose(position, quaternion, array, index) {
         var x = quaternion.x, y = quaternion.y, z = quaternion.z, w = quaternion.w;
@@ -136,5 +142,5 @@ define(function () {
             setMeshPosition: setMeshPosition
         };
     }
-    return CannonPhysics;
+    return threex.physics.CannonPhysics = CannonPhysics;
 });

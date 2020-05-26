@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var KaleidoShader = {
         uniforms: {
@@ -31,5 +33,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  KaleidoShader ;
+    return  threex.shaders.KaleidoShader = KaleidoShader;
 });

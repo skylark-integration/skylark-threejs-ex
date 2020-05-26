@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var OrbitControls = function (object, domElement) {
         CameraControls.call(this, object, domElement);
@@ -10,5 +16,5 @@ define(["skylark-threejs"], function (THREE) {
     OrbitControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     OrbitControls.prototype.constructor = OrbitControls;
 
-    return OrbitControls;
+    return threex.controls.experimental.OrbitControls = OrbitControls;
 });

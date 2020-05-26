@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass',
     '../shaders/AfterimageShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     AfterimageShader
 ) {
@@ -60,5 +62,5 @@ define([
             this.textureOld.setSize(width, height);
         }
     });
-    return AfterimagePass;
+    return threex.postprocessing.AfterimagePass = AfterimagePass;
 });

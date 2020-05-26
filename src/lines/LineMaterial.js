@@ -1,6 +1,10 @@
 define([
-	"skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     THREE.UniformsLib.line = {
         linewidth: { value: 1 },
@@ -288,5 +292,6 @@ define([
     LineMaterial.prototype = Object.create(THREE.ShaderMaterial.prototype);
     LineMaterial.prototype.constructor = LineMaterial;
     LineMaterial.prototype.isLineMaterial = true;
-    return LineMaterial;
+
+    return threex.lins.LineMaterial = LineMaterial;
 });

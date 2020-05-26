@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DeviceOrientationControls = function (object) {
         var scope = this;
@@ -67,5 +71,5 @@ define([
         };
         this.connect();
     };
-    return DeviceOrientationControls;
+    return threex.controls.DeviceOrientationControls = DeviceOrientationControls;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MapControls = function (object, domElement) {
         OrbitControls.call(this, object, domElement);
@@ -12,5 +16,5 @@ define([
     MapControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     MapControls.prototype.constructor = MapControls;
 
-	return MapControls;
+	return threex.controls.MapControls = MapControls;
 });    

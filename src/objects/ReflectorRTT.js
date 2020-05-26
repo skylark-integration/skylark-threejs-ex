@@ -9,5 +9,6 @@ define([
         this.geometry.setDrawRange(0, 0);
     };
     ReflectorRTT.prototype = Object.create(Reflector.prototype);
-    return ReflectorRTT;
+
+    return threex.objects.ReflectorRTT = ReflectorRTT;
 });

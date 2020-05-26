@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DRACOLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -397,5 +401,6 @@ define([
     DRACOLoader.getDecoderModule = function () {
         console.warn('THREE.DRACOLoader: The .getDecoderModule() method has been removed. Use instance methods.');
     };
-    return DRACOLoader;
+
+    return threex.loaders.DRACOLoader = DRACOLoader;
 });

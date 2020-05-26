@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var AfterimageShader = {
         uniforms: {
@@ -29,5 +31,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return AfterimageShader;
+    return threex.shaders.AfterimageShader = AfterimageShader;
 });

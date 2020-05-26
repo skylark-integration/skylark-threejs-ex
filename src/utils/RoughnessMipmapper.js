@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var RoughnessMipmapper = function () {
         var _mipmapMaterial = _getMipmapMaterial();
@@ -162,5 +166,5 @@ void main() {
     }();
 
 
-    return RoughnessMipmapper;
+    return threex.utils.RoughnessMipmapper = RoughnessMipmapper;
 });

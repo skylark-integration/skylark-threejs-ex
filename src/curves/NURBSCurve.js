@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     './NURBSUtils'
-], function (THREE, NURBSUtils) {
+], function (
+    THREE,
+    threex,
+    NURBSUtils
+) {
     'use strict';
     var NURBSCurve = function (degree, knots, controlPoints, startKnot, endKnot) {
         THREE.Curve.call(this);
@@ -33,5 +38,5 @@ define([
         return tangent;
     };
     
-    return NURBSCurve;
+    return threex.curves.NURBSCurve = NURBSCurve;
 });

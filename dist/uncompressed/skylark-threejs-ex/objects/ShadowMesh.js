@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ShadowMesh = function (mesh) {
         var shadowMaterial = new THREE.MeshBasicMaterial({
@@ -40,5 +44,5 @@ define([
             this.matrix.multiplyMatrices(shadowMatrix, this.meshMatrix);
         };
     }();
-    return ShadowMesh;
+    return threex.objects.ShadowMesh = ShadowMesh;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var _v1 = new THREE.Vector3();
     var _v2 = new THREE.Vector3();
@@ -50,5 +54,6 @@ define([
         }
         position.needsUpdate = true;
     };
-    return FaceNormalsHelper;
+
+    return threex.helpers.FaceNormalsHelper = FaceNormalsHelper;
 });

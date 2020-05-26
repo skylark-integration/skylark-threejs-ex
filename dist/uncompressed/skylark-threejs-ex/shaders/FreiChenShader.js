@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var FreiChenShader = {
         uniforms: {
@@ -57,5 +63,5 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return FreiChenShader;
+    return threex.shaders.FreiChenShader = FreiChenShader;
 });

@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var VerticalBlurShader = {
         uniforms: {
@@ -31,5 +33,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return VerticalBlurShader;
+    return threex.shaders.VerticalBlurShader = VerticalBlurShader;
 });

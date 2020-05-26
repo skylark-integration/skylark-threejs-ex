@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var a = {
         c: null,
@@ -250,5 +254,5 @@ define([
     var obb = new OBB();
 
     
-    return OBB;
+    return threex.math.OBB = OBB;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TessellateModifier = function (maxEdgeLength) {
         this.maxEdgeLength = maxEdgeLength;
@@ -162,5 +166,6 @@ define([
         geometry.faces = faces;
         geometry.faceVertexUvs = faceVertexUvs;
     };
-    return TessellateModifier;
+
+    return threex.modifiers.TessellateModifier = TessellateModifier;
 });

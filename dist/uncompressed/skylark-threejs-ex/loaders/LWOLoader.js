@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function LWO2Parser(IFFParser) {
         this.IFF = IFFParser;
@@ -1872,5 +1876,6 @@ define([
             return './';
         return url.substr(0, index);
     }
-    return LWOLoader ;
+
+    return threex.loaders.LWOLoader = LWOLoader;
 });

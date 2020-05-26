@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     './SSAARenderPass'
 ], function (
     THREE, 
+    threex,
     SSAARenderPass
 ) {
     'use strict';
@@ -82,5 +84,5 @@ define([
             renderer.autoClear = autoClear;
         }
     });
-    return TAARenderPass;
+    return threex.postprocessing.TAARenderPass = TAARenderPass;
 });

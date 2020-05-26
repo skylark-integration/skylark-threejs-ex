@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var DigitalGlitch = {
         uniforms: {
@@ -75,5 +77,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  DigitalGlitch ;
+    return  threex.shaders.DigitalGlitch = DigitalGlitch ;
 });

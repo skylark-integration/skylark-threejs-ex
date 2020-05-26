@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var BokehShader = {
         defines: {
@@ -103,5 +105,6 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return BokehShader;
+
+    return threex.shaders.BokehShader = BokehShader;
 });

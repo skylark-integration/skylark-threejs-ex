@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var BrightnessContrastShader = {
         uniforms: {
@@ -29,5 +31,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return BrightnessContrastShader;
+    return threex.shaders.BrightnessContrastShader = BrightnessContrastShader;
 });

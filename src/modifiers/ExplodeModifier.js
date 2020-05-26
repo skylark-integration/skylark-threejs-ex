@@ -1,4 +1,10 @@
-define(function () {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ExplodeModifier = function () {
     };
@@ -22,5 +28,5 @@ define(function () {
         }
         geometry.vertices = vertices;
     };
-    return ExplodeModifier;
+    return threex.modifiers.ExplodeModifier = ExplodeModifier;
 });

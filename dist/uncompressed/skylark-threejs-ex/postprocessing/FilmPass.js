@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass',
     '../shaders/FilmShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     FilmShader
 ) {
@@ -45,5 +47,6 @@ define([
             }
         }
     });
-    return FilmPass;
+
+    return threex.postprocessing.FilmPass = FilmPass;
 });

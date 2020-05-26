@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["./LineSegments2","./LineGeometry","./LineMaterial"],function(e,t,i){"use strict";var n=function(n,o){e.call(this),this.type="Line2",this.geometry=void 0!==n?n:new t,this.material=void 0!==o?o:new i({color:16777215*Math.random()})};return n.prototype=Object.assign(Object.create(e.prototype),{constructor:n,isLine2:!0}),n});
+define(["../threex","./LineSegments2","./LineGeometry","./LineMaterial"],function(e,t,i,n){"use strict";var r=function(e,r){t.call(this),this.type="Line2",this.geometry=void 0!==e?e:new i,this.material=void 0!==r?r:new n({color:16777215*Math.random()})};return r.prototype=Object.assign(Object.create(t.prototype),{constructor:r,isLine2:!0}),e.lins.Line2=r});
 //# sourceMappingURL=../sourcemaps/lines/Line2.js.map

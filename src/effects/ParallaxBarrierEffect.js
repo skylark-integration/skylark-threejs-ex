@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ParallaxBarrierEffect = function (renderer) {
         var _camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -63,5 +67,5 @@ define([
         };
     };
     
-    return ParallaxBarrierEffect;
+    return threex.effects.ParallaxBarrierEffect = ParallaxBarrierEffect;
 });

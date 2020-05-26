@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/SMAAShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     SMAAShader
 ) {
@@ -124,5 +126,5 @@ define([
             return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEIAAAAhCAAAAABIXyLAAAAAOElEQVRIx2NgGAWjYBSMglEwEICREYRgFBZBqDCSLA2MGPUIVQETE9iNUAqLR5gIeoQKRgwXjwAAGn4AtaFeYLEAAAAASUVORK5CYII=';
         }
     });
-    return SMAAPass;
+    return threex.postprocessing.SMAAPass = SMAAPass;
 });

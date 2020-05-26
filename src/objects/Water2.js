@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../objects/Reflector',
     '../objects/Refractor'
 ], function (
     THREE, 
+    threex,
     Reflector, 
     Refractor
 ) {
@@ -224,5 +226,5 @@ define([
             '}'
         ].join('\n')
     };
-    return Water;
+    return threex.objects.Water2 = Water;
 });

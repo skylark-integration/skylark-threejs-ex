@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../nodes/Nodes'
-], function (THREE, Nodes) {
+], function (
+    THREE,
+    threex,
+    Nodes
+) {
     'use strict';
     var NodeMaterialLoader = function (manager, library) {
         this.manager = manager !== undefined ? manager : THREE.DefaultLoadingManager;
@@ -143,5 +148,5 @@ define([
         }
     });
 
-    return  NodeMaterialLoader;
+    return  threex.loaders.NodeMaterialLoader = NodeMaterialLoader;
 });

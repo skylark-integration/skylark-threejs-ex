@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ColorCorrectionShader = {
         uniforms: {
@@ -26,5 +32,5 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return ColorCorrectionShader;
+    return threex.shaders.ColorCorrectionShader = ColorCorrectionShader;
 });

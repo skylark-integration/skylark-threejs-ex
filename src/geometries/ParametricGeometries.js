@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ParametricGeometries = {
         klein: function (v, u, target) {
@@ -133,5 +137,5 @@ define([
     ParametricGeometries.PlaneGeometry.prototype = Object.create(THREE.Geometry.prototype);
     ParametricGeometries.PlaneGeometry.prototype.constructor = ParametricGeometries.PlaneGeometry;
 
-    return ParametricGeometries;
+    return threex.geometries.ParametricGeometries = ParametricGeometries;
 });

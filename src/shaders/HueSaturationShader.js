@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var HueSaturationShader = {
         uniforms: {
@@ -38,5 +40,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  HueSaturationShader ;
+    return  threex.shaders.HueSaturationShader = HueSaturationShader;
 });

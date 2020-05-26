@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var BufferGeometryUtils = {
         computeTangents: function (geometry) {
@@ -395,5 +399,5 @@ define([
             }
         }
     };
-    return BufferGeometryUtils;
+    return threex.utils.BufferGeometryUtils = BufferGeometryUtils;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DecalVertex = function (position, normal) {
         this.position = position;
@@ -9,5 +13,6 @@ define([
     DecalVertex.prototype.clone = function () {
         return new this.constructor(this.position.clone(), this.normal.clone());
     };
-    return DecalVertex;
+
+    return threex.geometries.DecalVertex = DecalVertex;
 });

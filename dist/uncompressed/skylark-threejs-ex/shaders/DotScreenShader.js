@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DotScreenShader = {
         uniforms: {
@@ -35,5 +41,5 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return  DotScreenShader ;
+    return  threex.shaders.DotScreenShader = DotScreenShader;
 });

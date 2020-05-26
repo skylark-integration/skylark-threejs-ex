@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TDSLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -443,5 +447,5 @@ define([
     var TEX_VERTS = 16704;
     var MESH_MATRIX = 16736;
 
-    return TDSLoader;
+    return threex.loaders.TDSLoader = TDSLoader;
 });

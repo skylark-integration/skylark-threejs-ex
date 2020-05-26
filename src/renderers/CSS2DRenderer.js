@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
 
     var CSS2DObject = function (element) {
@@ -109,5 +113,5 @@ define([
 
     CSS2DRenderer.CSS2DObject = CSS2DObject;
     
-    return   CSS2DRenderer;
+    return   threex.renderers.CSS2DRenderer = CSS2DRenderer;
 });

@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../postprocessing/Pass',
     '../shaders/DotScreenShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     DotScreenShader
 ) {
@@ -43,5 +45,6 @@ define([
             }
         }
     });
-    return DotScreenPass;
+
+    return threex.postprocessing.DotScreenPass = DotScreenPass;
 });

@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var ParallaxShader = {
         modes: {
@@ -110,5 +112,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return ParallaxShader ;
+    return threex.shaders.ParallaxShader = ParallaxShader;
 });

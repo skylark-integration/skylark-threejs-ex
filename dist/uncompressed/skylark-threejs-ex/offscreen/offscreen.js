@@ -1,4 +1,6 @@
-define(['./scene'], function (init) {
+define([
+	'./scene'
+], function (init) {
     'use strict';
     self.onmessage = function (message) {
         var data = message.data;

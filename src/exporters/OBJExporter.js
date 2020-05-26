@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var OBJExporter = function () {
     };
@@ -131,5 +135,5 @@ define([
         }
     };
 
-    return OBJExporter;
+    return threex.exporters.OBJExporter = OBJExporter;
 });

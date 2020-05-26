@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Water = function (geometry, options) {
         THREE.Mesh.call(this, geometry);
@@ -226,5 +230,5 @@ define([
     Water.prototype = Object.create(THREE.Mesh.prototype);
     Water.prototype.constructor = Water;
 
-    return Water;
+    return threex.objects.Water = Water;
 });

@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../loaders/TGALoader'
-], function (THREE, TGALoader) {
+], function (
+    THREE,
+    threex, 
+    TGALoader
+) {
     'use strict';
     var ColladaLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -2347,5 +2352,6 @@ define([
             };
         }
     });
-    return ColladaLoader;
+
+    return threex.loaders.ColladaLoader = ColladaLoader;
 });

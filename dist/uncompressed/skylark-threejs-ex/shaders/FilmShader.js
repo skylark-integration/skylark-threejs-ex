@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var FilmShader = {
         uniforms: {
@@ -39,5 +41,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  FilmShader ;
+    return  threex.shaders.FilmShader = FilmShader;
 });

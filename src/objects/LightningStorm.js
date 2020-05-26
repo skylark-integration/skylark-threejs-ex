@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../geometries/LightningStrike'
 ], function (
     THREE, 
+    threex,
     LightningStrike
 ) {
     'use strict';
@@ -107,5 +109,5 @@ define([
         return new this.constructor(this.stormParams).copy(this);
     };
 
-    return LightningStorm;
+    return threex.objects.LightningStorm = LightningStorm;
 });

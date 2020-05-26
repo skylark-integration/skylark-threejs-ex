@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../renderers/Projector'
 ], function (
     THREE, 
+    threex,
     Projector
 ) {
     'use strict';
@@ -310,5 +312,5 @@ define([
 
     SVGRenderer.SVGObject = SVGObject;
     
-    return  SVGRenderer;
+    return  threex.renderers.SVGRenderer = SVGRenderer;
 });

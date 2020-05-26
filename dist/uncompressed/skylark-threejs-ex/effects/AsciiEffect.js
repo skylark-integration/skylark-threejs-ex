@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex",
+], function (threex) {
     'use strict';
     var AsciiEffect = function (renderer, charSet, options) {
         charSet = charSet === undefined ? ' .:-=+*#%@' : charSet;
@@ -170,5 +172,6 @@ define(function () {
             oAscii.innerHTML = '<tr><td>' + strChars + '</td></tr>';
         }
     };
-    return AsciiEffect;
+
+    return threex.effects.AsciiEffect = AsciiEffect;
 });

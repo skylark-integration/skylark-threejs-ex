@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var BleachBypassShader = {
         uniforms: {
@@ -32,5 +34,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return BleachBypassShader;
+    return threex.shaders.BleachBypassShader = BleachBypassShader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ConvexHull = function () {
         var Visible = 0;
@@ -598,5 +602,5 @@ define([
         return ConvexHull;
     }();
 
-    return ConvexHull;
+    return threex.math.ConvexHull = ConvexHull;
 });

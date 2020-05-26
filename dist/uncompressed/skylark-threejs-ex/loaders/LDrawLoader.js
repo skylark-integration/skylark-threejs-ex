@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var LDrawLoader = function () {
         var conditionalLineVertShader = `
@@ -1155,5 +1159,6 @@ define([
         });
         return LDrawLoader;
     }();
-    return  LDrawLoader;
+
+    return  threex.loaders.LDrawLoader = LDrawLoader;
 });

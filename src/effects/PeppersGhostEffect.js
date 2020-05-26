@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
 
     'use strict';
     var PeppersGhostEffect = function (renderer) {
@@ -85,5 +89,5 @@ define([
         };
     };
 
-    return PeppersGhostEffect;
+    return threex.effects.PeppersGhostEffect = PeppersGhostEffect;
 });

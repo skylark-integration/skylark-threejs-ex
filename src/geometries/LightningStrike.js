@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../math/SimplexNoise'
-], function (THREE, SimplexNoise) {
+], function (
+    THREE,
+    threex, 
+    SimplexNoise
+) {
     'use strict';
     var LightningStrike = function (rayParameters) {
         THREE.BufferGeometry.call(this);
@@ -538,5 +543,6 @@ define([
     LightningStrike.prototype.clone = function () {
         return new this.constructor(LightningStrike.copyParameters({}, this.rayParameters));
     };
-    return LightningStrike;
+
+    return threex.geometries.LightningStrike = LightningStrike;
 });

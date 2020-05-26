@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var DRACOExporter = function () {
     };
@@ -107,5 +111,5 @@ define([
     DRACOExporter.TEX_COORD = 3;
     DRACOExporter.GENERIC = 4;
 
-    return DRACOExporter;
+    return threex.exporters.DRACOExporter = DRACOExporter;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var PVRLoader = function (manager) {
         THREE.CompressedTextureLoader.call(this, manager);
@@ -129,5 +133,5 @@ define([
         }
         return pvr;
     };
-    return PVRLoader;
+    return threex.loaders.PVRLoader = PVRLoader;
 });

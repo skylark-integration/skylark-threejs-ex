@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     './RGBELoader'
 ], function (
     THREE, 
+    threex,
     RGBELoader
 ) {
     'use strict';
@@ -83,5 +85,6 @@ define([
             return this;
         }
     });
-    return HDRCubeTextureLoader;
+
+    return threex.loaders.HDRCubeTextureLoader = HDRCubeTextureLoader;
 });

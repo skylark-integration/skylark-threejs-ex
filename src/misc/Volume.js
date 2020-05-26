@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../misc/VolumeSlice'
 ], function (
     THREE, 
+    threex,
     VolumeSlice
 ) {
     'use strict';
@@ -280,5 +282,5 @@ define([
             ];
         }
     };
-    return Volume;
+    return threex.misc.Volume = Volume;
 });

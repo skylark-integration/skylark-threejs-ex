@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var KTXLoader = function (manager) {
         THREE.CompressedTextureLoader.call(this, manager);
@@ -94,5 +98,6 @@ define([
         KhronosTextureContainer.TEX_3D = 3;
         return KhronosTextureContainer;
     }();
-    return KTXLoader;
+
+    return threex.loaders.KTXLoader = KTXLoader;
 });

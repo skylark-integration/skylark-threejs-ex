@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MMDPhysics = function () {
         function MMDPhysics(mesh, rigidBodyParams, constraintParams, params) {
@@ -757,5 +761,6 @@ define([
         });
         return MMDPhysics;
     }();
-    return  MMDPhysics ;
+
+    return  threex.animation.MMDPhysics = MMDPhysics;
 });

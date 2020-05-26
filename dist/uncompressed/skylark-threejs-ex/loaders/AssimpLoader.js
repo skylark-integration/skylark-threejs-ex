@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var AssimpLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -1341,5 +1345,6 @@ define([
             return InternReadFile(buffer);
         }
     });
-    return AssimpLoader;
+
+    return threex.loaders.AssimpLoader = AssimpLoader;
 });

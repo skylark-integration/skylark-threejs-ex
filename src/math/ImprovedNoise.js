@@ -287,5 +287,5 @@ define(function () {
             }
         };
     };
-    return ImprovedNoise;
+    return threex.math.ImprovedNoise = ImprovedNoise;
 });

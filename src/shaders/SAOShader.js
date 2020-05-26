@@ -142,5 +142,5 @@ define([
             '}'
         ].join('\n')
     };
-    return SAOShader;
+    return threex.shaders.SAOShader = SAOShader;
 });

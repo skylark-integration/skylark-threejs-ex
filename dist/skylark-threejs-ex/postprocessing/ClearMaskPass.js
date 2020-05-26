@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["../postprocessing/Pass"],function(t){"use strict";var e=function(){t.call(this),this.needsSwap=!1};return e.prototype=Object.create(t.prototype),Object.assign(e.prototype,{render:function(t){t.state.buffers.stencil.setLocked(!1),t.state.buffers.stencil.setTest(!1)}}),e});
+define(["../threex","../postprocessing/Pass"],function(e,t){"use strict";var s=function(){t.call(this),this.needsSwap=!1};return s.prototype=Object.create(t.prototype),Object.assign(s.prototype,{render:function(e){e.state.buffers.stencil.setLocked(!1),e.state.buffers.stencil.setTest(!1)}}),e.postprocessing.ClearMaskPass=s});
 //# sourceMappingURL=../sourcemaps/postprocessing/ClearMaskPass.js.map

@@ -1,5 +1,6 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/SAOShader',
     '../shaders/DepthLimitedBlurShader',
@@ -7,6 +8,7 @@ define([
     '../shaders/UnpackDepthRGBAShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     SAOShader, 
     DepthLimitedBlurShader, 
@@ -280,5 +282,6 @@ define([
             this.hBlurMaterial.needsUpdate = true;
         }
     });
-    return SAOPass;
+
+    return threex.postprocessing.SAOPass = SAOPass;
 });

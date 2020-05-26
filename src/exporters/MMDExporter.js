@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../utils/mmdparser'
-], function (THREE, MMDParser) {
+], function (
+    THREE,
+    threex, 
+    MMDParser
+) {
     'use strict';
     var MMDExporter = function () {
         var u2sTable;
@@ -102,5 +107,6 @@ define([
             return outputShiftJis === true ? unicodeToShiftjis(lines) : lines;
         };
     };
-    return MMDExporter;
+
+    return threex.exporters.MMDExporter = MMDExporter;
 });

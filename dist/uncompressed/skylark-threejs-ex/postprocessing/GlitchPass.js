@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/DigitalGlitch'
 ], function (
     THREE, 
+    threex,
     Pass, 
     DigitalGlitch
 ) {
@@ -78,5 +80,5 @@ define([
             return new THREE.DataTexture(data_arr, dt_size, dt_size, THREE.RGBFormat, THREE.FloatType);
         }
     });
-    return GlitchPass;
+    return threex.postprocessing.GlitchPass = GlitchPass;
 });

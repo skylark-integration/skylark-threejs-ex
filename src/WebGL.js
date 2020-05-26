@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "./threex"
+],function (threex) {
     'use strict';
     var WEBGL = {
         isWebGLAvailable: function () {
@@ -54,5 +56,5 @@ define(function () {
             return element;
         }
     };
-    return WEBGL;
+    return threex.WebGL = WEBGL;
 });

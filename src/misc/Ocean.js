@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../shaders/OceanShaders'
 ], function (
     THREE, 
+    threex,
     OceanShaders
 ) {
     'use strict';
@@ -288,5 +290,5 @@ define([
         this.renderer.clear();
         this.renderer.render(this.scene, this.oceanCamera);
     };
-    return Ocean;
+    return threex.misc.Ocean = Ocean;
 });

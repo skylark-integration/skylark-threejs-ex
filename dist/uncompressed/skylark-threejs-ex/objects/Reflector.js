@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Reflector = function (geometry, options) {
         THREE.Mesh.call(this, geometry);
@@ -151,5 +155,5 @@ define([
         ].join('\n')
     };
 
-    return Reflector;
+    return threex.objects.Reflector = Reflector;
 });

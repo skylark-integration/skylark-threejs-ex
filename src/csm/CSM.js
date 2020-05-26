@@ -1,8 +1,14 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Frustum',
     './Shader'
-], function (THREE, Frustum, Shader) {
+], function (
+    THREE,
+    threex,
+    Frustum, 
+    Shader
+) {
     'use strict';
     const _cameraToLightMatrix = new THREE.Matrix4();
     const _lightSpaceFrustum = new Frustum();
@@ -242,5 +248,5 @@ define([
             shaders.clear();
         }
     }
-    return { CSM: CSM };
+    return threex.csm.CSM = CSM;
 });

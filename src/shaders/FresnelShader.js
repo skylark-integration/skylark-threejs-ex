@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var FresnelShader = {
         uniforms: {
@@ -44,5 +46,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return FresnelShader;
+    return threex.shaders.FresnelShader = FresnelShader;
 });

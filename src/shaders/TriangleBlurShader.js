@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TriangleBlurShader = {
         uniforms: {
@@ -34,5 +38,5 @@ define([
             '}'
         ].join('\n')
     };
-    return TriangleBlurShader ;
+    return threex.shaders.TriangleBlurShader = TriangleBlurShader;
 });

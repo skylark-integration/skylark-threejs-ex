@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var AnimationClipCreator = function () {
     };
@@ -76,5 +80,5 @@ define([
         return new THREE.AnimationClip(null, duration, [track]);
     };
 
-    return AnimationClipCreator;
+    return threex.animation.AnimationClipCreator = AnimationClipCreator;
 });

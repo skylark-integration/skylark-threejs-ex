@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass'
 ], function (
     THREE, 
+    threex,
     Pass
 ) {
     'use strict';
@@ -41,5 +43,5 @@ define([
             }
         }
     });
-    return ShaderPass;
+    return threex.postprocessing.ShaderPass = ShaderPass;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Lensflare = function () {
         THREE.Mesh.call(this, Lensflare.Geometry, new THREE.MeshBasicMaterial({
@@ -160,5 +164,6 @@ define([
     Lensflare.prototype = Object.create(THREE.Mesh.prototype);
     Lensflare.prototype.constructor = Lensflare;
     Lensflare.prototype.isLensflare = true;
-    return Lensflare;
+
+    return threex.objects.Lensflare = Lensflare;
 });

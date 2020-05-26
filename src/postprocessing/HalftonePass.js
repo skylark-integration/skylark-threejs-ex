@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/HalftoneShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     HalftoneShader
 ) {
@@ -47,5 +49,5 @@ define([
             this.uniforms.height.value = height;
         }
     });
-    return HalftonePass;
+    return threex.postprocessing.HalftonePass = HalftonePass;
 });

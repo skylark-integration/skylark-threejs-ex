@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var NormalMapShader = {
         uniforms: {
@@ -27,5 +33,5 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return  NormalMapShader ;
+    return  threex.shaders.NormalMapShader = NormalMapShader;
 });

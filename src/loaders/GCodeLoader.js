@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var GCodeLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -130,5 +134,5 @@ define([
             return object;
         }
     });
-    return GCodeLoader;
+    return threex.loaders.GCodeLoader = GCodeLoader;
 });

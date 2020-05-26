@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var GLTFLoader = function () {
         function GLTFLoader(manager) {
@@ -1779,5 +1783,6 @@ define([
         }();
         return GLTFLoader;
     }();
-    return GLTFLoader ;
+    
+    return threex.loaders.GLTFLoader = GLTFLoader;
 });

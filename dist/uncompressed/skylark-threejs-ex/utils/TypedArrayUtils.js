@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var TypedArrayUtils = {};
     TypedArrayUtils.quicksortIP = function (arr, eleSize, orderElement) {
@@ -274,5 +276,5 @@ define(function () {
             }
         }
     };
-    return TypedArrayUtils;
+    return threex.utils.TypedArrayUtils = TypedArrayUtils;
 });

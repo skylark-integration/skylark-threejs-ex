@@ -1,4 +1,10 @@
-define(['./Pass'], function (Pass) {
+define([
+     "../threex",
+    './Pass'
+], function (
+    threex,
+    Pass
+) {
     'use strict';
     var RenderPass = function (scene, camera, overrideMaterial, clearColor, clearAlpha) {
         Pass.call(this);
@@ -42,5 +48,6 @@ define(['./Pass'], function (Pass) {
             renderer.autoClear = oldAutoClear;
         }
     });
-    return RenderPass;
+
+    return threex.postprocessing.RenderPass = RenderPass;
 });

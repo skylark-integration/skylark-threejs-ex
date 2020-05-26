@@ -1,6 +1,10 @@
 define([
+    "../threex",
     './LineSegmentsGeometry'
-], function (LineSegmentsGeometry) {
+], function (
+    threex,
+    LineSegmentsGeometry
+) {
     'use strict';
     var LineGeometry = function () {
         LineSegmentsGeometry.call(this);
@@ -50,5 +54,6 @@ define([
             return this;
         }
     });
-    return LineGeometry;
+    
+    return threex.lins.LineGeometry = LineGeometry;
 });

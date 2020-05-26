@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Lut = function (colormap, numberofcolors) {
         this.lut = [];
@@ -193,5 +197,5 @@ define([
         ]
     };
     
-    return Lut;
+    return threex.math.Lut = Lut;
 });

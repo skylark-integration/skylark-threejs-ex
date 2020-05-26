@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var GeometryCompressionUtils = {
         compressNormals: function (mesh, encodeMethod) {
@@ -577,5 +581,5 @@ define([
 
     GeometryCompressionUtils.PackedPhongMaterial = PackedPhongMaterial;
 
-    return GeometryCompressionUtils;
+    return threex.utils.GeometryCompressionUtils = GeometryCompressionUtils;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var LightProbeGenerator = {
         fromCubeTexture: function (cubeTexture) {
@@ -164,5 +168,5 @@ define([
         return color;
     };
     
-    return LightProbeGenerator;
+    return threex.lights.LightProbeGenerator = LightProbeGenerator;
 });

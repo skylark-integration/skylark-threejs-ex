@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ConvolutionShader = {
         defines: {
@@ -52,5 +58,6 @@ define(["skylark-threejs"], function (THREE) {
             return values;
         }
     };
-    return ConvolutionShader;
+
+    return threex.shaders.ConvolutionShader = ConvolutionShader;
 });

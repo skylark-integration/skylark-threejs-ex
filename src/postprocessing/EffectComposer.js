@@ -1,10 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../shaders/CopyShader',
     '../postprocessing/ShaderPass',
     '../postprocessing/MaskPass'
 ], function (
     THREE, 
+    threex,
     CopyShader, 
     ShaderPass, 
     MaskPass
@@ -133,5 +135,5 @@ define([
         }
     });
 
-    return  EffectComposer;
+    return  threex.postprocessing.EffectComposer = EffectComposer;
 });

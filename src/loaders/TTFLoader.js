@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TTFLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -117,5 +121,5 @@ define([
             return convert(opentype.parse(arraybuffer), this.reversed);
         }
     });
-    return TTFLoader;
+    return threex.loaders.TTFLoader = TTFLoader;
 });

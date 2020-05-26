@@ -1,4 +1,6 @@
-define(function () {
+define([
+  "../threex"
+], function (threex) {
     'use strict';
     var VRButton = {
         createButton: function (renderer, options) {
@@ -95,5 +97,5 @@ define(function () {
             }
         }
     };
-    return VRButton;
+    return threex.webxr.VRButton = VRButton;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MarchingCubes = function (resolution, material, enableUvs, enableColors) {
         THREE.ImmediateRenderObject.call(this, material);
@@ -4854,6 +4858,6 @@ define([
         -1
     ]);
 
-    return  MarchingCubes;
+    return threex.objects.MarchingCubes = MarchingCubes;
 
 });

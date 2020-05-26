@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var SepiaShader = {
         uniforms: {
@@ -26,5 +28,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return SepiaShader;
+    return threex.shaders.SepiaShader = SepiaShader;
 });

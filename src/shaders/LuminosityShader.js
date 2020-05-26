@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var LuminosityShader = {
         uniforms: { 'tDiffuse': { value: null } },
@@ -20,5 +22,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  LuminosityShader ;
+    return  threex.shaders.LuminosityShader = LuminosityShader;
 });

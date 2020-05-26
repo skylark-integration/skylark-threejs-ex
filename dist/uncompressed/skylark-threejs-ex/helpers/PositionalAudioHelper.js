@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function PositionalAudioHelper(audio, range, divisionsInnerAngle, divisionsOuterAngle) {
         this.audio = audio;
@@ -64,5 +68,5 @@ define([
         this.material[1].dispose();
     };
 
-    return PositionalAudioHelper;
+    return threex.helpers.PositionalAudioHelper = PositionalAudioHelper;
 });

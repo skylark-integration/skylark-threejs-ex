@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SVGLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -1210,5 +1214,5 @@ define([
             }
         };
     }();
-    return SVGLoader;
+    return threex.loaders.SVGLoader = SVGLoader;
 });

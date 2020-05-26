@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TransformControlsGizmo = function () {
         'use strict';
@@ -1402,5 +1408,5 @@ define(["skylark-threejs"], function (THREE) {
         isTransformControlsGizmo: true
     });
  
-    return  TransformControlsGizmo;
+    return  threex.controls.TransformControlsGizmo = TransformControlsGizmo;
 });

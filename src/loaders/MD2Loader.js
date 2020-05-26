@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var MD2Loader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -980,5 +984,6 @@ define([
             };
         }()
     });
-    return MD2Loader;
+
+    return threex.loaders.MD2Loader = MD2Loader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var RollerCoasterGeometry = function (curve, divisions) {
         THREE.BufferGeometry.call(this);
@@ -360,7 +364,8 @@ define([
         this.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
     };
     TreesGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
-    return {
+
+    return threex.misc.RollerCoaster = {
         RollerCoasterGeometry,
         RollerCoasterLiftersGeometry,
         RollerCoasterShadowGeometry,

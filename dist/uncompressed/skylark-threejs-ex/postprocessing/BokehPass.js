@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
-    '../postprocessing/Pass',
+     "../threex",
+   '../postprocessing/Pass',
     '../shaders/BokehShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     BokehShader
 ) {
@@ -80,5 +82,6 @@ define([
             renderer.autoClear = oldAutoClear;
         }
     });
-    return BokehPass;
+
+    return threex.postprocessing.BokehPass = BokehPass;
 });

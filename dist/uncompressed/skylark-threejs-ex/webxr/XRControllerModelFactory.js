@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../loaders/GLTFLoader',
     '../utils/motion'
 ], function (
     THREE, 
+    threex,
     GLTFLoader, 
     motion
 ) {
@@ -148,5 +150,5 @@ define([
         };
         return XRControllerModelFactory;
     }();
-    return XRControllerModelFactory;
+    return threex.webxr.XRControllerModelFactory = XRControllerModelFactory;
 });

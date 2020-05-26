@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var FlyControls = function (object, domElement) {
         if (domElement === undefined) {
@@ -251,5 +255,5 @@ define([
         this.updateMovementVector();
         this.updateRotationVector();
     };
-    return FlyControls;
+    return threex.controls.FlyControls = FlyControls;
 });

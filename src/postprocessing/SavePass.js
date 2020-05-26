@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../shaders/CopyShader'
 ], function (
-    THREE, 
+    THREE,
+    threex, 
     Pass, 
     CopyShader
 ) {
@@ -45,5 +47,6 @@ define([
             this.fsQuad.render(renderer);
         }
     });
-    return SavePass;
+
+    return threex.postprocessing.SavePass = SavePass;
 });

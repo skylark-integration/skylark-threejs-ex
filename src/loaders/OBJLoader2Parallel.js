@@ -1,5 +1,6 @@
 define([
     "skylark-threejs",
+    "../threex",
     './obj2/worker/main/WorkerExecutionSupport',
     './obj2/utils/CodeSerializer',
     './OBJLoader2',
@@ -7,6 +8,7 @@ define([
     './obj2/worker/parallel/WorkerRunner'
 ], function (
     THREE, 
+    threex,
     WorkerExecutionSupport, 
     CodeSerializer, 
     OBJLoader2, 
@@ -116,5 +118,5 @@ define([
             }
         }
     });
-    return OBJLoader2Parallel;
+    return threex.loaders.OBJLoader2Parallel = OBJLoader2Parallel;
 });

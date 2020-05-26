@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ColladaExporter = function () {
     };
@@ -284,5 +288,6 @@ define([
             return res;
         }
     };
-    return ColladaExporter;
+
+    return threex.exporters.ColladaExporter = ColladaExporter;
 });

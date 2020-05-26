@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SelectionHelper = function () {
         function SelectionHelper(selectionBox, renderer, cssClassName) {
@@ -51,5 +55,5 @@ define([
         return SelectionHelper;
     }();
 
-    return SelectionHelper;
+    return threex.interactive.SelectionHelper = SelectionHelper;
 });

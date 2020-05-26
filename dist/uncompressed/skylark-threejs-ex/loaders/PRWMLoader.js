@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var PRWMLoader = function () {
         var bigEndianPlatform = null;
@@ -139,5 +143,6 @@ define([
         };
         return PRWMLoader;
     }();
-    return PRWMLoader;
+
+    return threex.loaders.PRWMLoader = PRWMLoader;
 });

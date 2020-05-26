@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Curves = function () {
         function GrannyKnot() {
@@ -226,5 +230,6 @@ define([
             DecoratedTorusKnot5c: DecoratedTorusKnot5c
         };
     }();
-    return Curves;
+
+    return threex.curves.Curves = Curves;
 });

@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
-    'skylark-zlib/Inflate'
+    'skylark-zlib/Inflate',
+    "../threex"
 ], function (
     THREE, 
-    Inflate
+    Inflate,
+    threex
 ) {
     'use strict';
     var VTKLoader = function (manager) {
@@ -657,5 +659,5 @@ define([
         }
     });
 
-    return VTKLoader;
+    return threex.loaders.VTKLoader = VTKLoader;
 });

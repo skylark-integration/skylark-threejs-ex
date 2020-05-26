@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var GammaCorrectionShader = {
         uniforms: { 'tDiffuse': { value: null } },
@@ -18,5 +20,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return GammaCorrectionShader;
+    return threex.shaders.GammaCorrectionShader = GammaCorrectionShader;
 });

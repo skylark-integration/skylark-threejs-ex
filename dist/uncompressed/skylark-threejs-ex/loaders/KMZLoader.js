@@ -1,8 +1,10 @@
 define([
     "skylark-threejs",
+    "../threex",
     './ColladaLoader'
 ], function (
     THREE, 
+    threex,
     ColladaLoader
 ) {
     'use strict';
@@ -60,5 +62,6 @@ define([
             return { scene: new THREE.Group() };
         }
     });
-    return KMZLoader;
+
+    return threex.loaders.KMZLoader = KMZLoader;
 });

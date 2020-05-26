@@ -213,5 +213,5 @@ define([
             '\t\t}'
         ].join('\n')
     };
-    return VolumeRenderShader1;
+    return threex.shaders.VolumeShader = VolumeRenderShader1;
 });

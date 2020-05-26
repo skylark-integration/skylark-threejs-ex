@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     '../math/ConvexHull'
-], function (THREE, ConvexHull) {
+], function (
+    THREE, 
+    threex,
+    ConvexHull
+) {
     'use strict';
     var ConvexBufferGeometry = function (points) {
         THREE.BufferGeometry.call(this);
@@ -27,5 +32,6 @@ define([
     };
     ConvexBufferGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
     ConvexBufferGeometry.prototype.constructor = ConvexBufferGeometry;
-    return ConvexBufferGeometry;
+
+    return threex.geometries.ConvexBufferGeometry = ConvexBufferGeometry;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var RenderableObject = function () {
         this.id = 0;
@@ -629,5 +633,5 @@ define([
     Projector.RenderableLine = RenderableLine;
     Projector.RenderableSprite = RenderableSprite;
     
-    return Projector;
+    return threex.renderers.Projector = Projector;
 });

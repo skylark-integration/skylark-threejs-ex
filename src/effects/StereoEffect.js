@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var StereoEffect = function (renderer) {
         var _stereo = new THREE.StereoCamera();
@@ -31,5 +35,5 @@ define([
         };
     };
 
-    return StereoEffect;
+    return threex.effects.StereoEffect = StereoEffect;
 });

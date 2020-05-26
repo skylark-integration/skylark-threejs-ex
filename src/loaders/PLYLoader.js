@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var PLYLoader = function (manager) {
         THREE.Loader.call(this, manager);
@@ -324,5 +328,5 @@ define([
             return geometry;
         }
     });
-    return PLYLoader;
+    return threex.loaders.PLYLoader = PLYLoader;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     function RectAreaLightHelper(light, color) {
         this.type = 'RectAreaLightHelper';
@@ -80,5 +84,5 @@ define([
         this.children[0].material.dispose();
     };
 
-    return RectAreaLightHelper;
+    return threex.helpers.RectAreaLightHelper = RectAreaLightHelper;
 });

@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs","../math/ConvexHull"],function(e,t){"use strict";var r=function(t){e.Geometry.call(this),this.fromBufferGeometry(new ConvexBufferGeometry(t)),this.mergeVertices()};return(r.prototype=Object.create(e.Geometry.prototype)).constructor=r,r});
+define(["skylark-threejs","../threex","../math/ConvexHull"],function(e,t,r){"use strict";var o=function(t){e.Geometry.call(this),this.fromBufferGeometry(new ConvexBufferGeometry(t)),this.mergeVertices()};return(o.prototype=Object.create(e.Geometry.prototype)).constructor=o,t.geometries.ConvexGeometry=o});
 //# sourceMappingURL=../sourcemaps/geometries/ConvexGeometry.js.map

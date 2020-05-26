@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var Fire = function (geometry, options) {
         THREE.Mesh.call(this, geometry);
@@ -621,5 +625,6 @@ define([
             '}'
         ].join('\n')
     };
-    return Fire;
+
+    return threex.objects.Fire = Fire;
 });

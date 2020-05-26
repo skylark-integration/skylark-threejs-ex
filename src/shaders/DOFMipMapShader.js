@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var DOFMipMapShader = {
         uniforms: {
@@ -29,5 +31,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  DOFMipMapShader ;
+    return  threex.shaders.DOFMipMapShader = DOFMipMapShader;
 });

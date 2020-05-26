@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var SimplifyModifier = function () {
     };
@@ -263,5 +267,6 @@ define([
             return simplifiedGeometry;
         };
     }());
-    return SimplifyModifier;
+
+    return threex.modifiers.SimplifyModifier = SimplifyModifier;
 });

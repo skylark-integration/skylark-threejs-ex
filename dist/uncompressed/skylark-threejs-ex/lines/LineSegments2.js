@@ -117,5 +117,6 @@ define([
             };
         }()
     });
-    return LineSegments2;
+
+    return threex.lins.LineSegments2 = LineSegments2;
 });

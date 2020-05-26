@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var LuminosityHighPassShader = {
         shaderID: 'luminosityHighPass',
@@ -33,5 +39,5 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return LuminosityHighPassShader;
+    return threex.shaders.LuminosityHighPassShader = LuminosityHighPassShader;
 });

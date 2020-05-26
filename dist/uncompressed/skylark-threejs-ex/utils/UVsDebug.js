@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var UVsDebug = function (geometry, size) {
         var abc = 'abc';
@@ -98,5 +102,5 @@ define([
             }
         }
     };
-    return UVsDebug;
+    return threex.utils.UVsDebug = UVsDebug;
 });

@@ -1,11 +1,13 @@
 define([
     "skylark-threejs",
+    "../threex",
     './Pass',
     '../math/SimplexNoise',
     '../shaders/SSAOShader',
     '../shaders/CopyShader'
 ], function (
     THREE, 
+    threex,
     Pass, 
     SimplexNoise, 
     SSAOShader, 
@@ -262,5 +264,5 @@ define([
         'Depth': 4,
         'Normal': 5
     };
-    return SSAOPass;
+    return threex.postprocessing.SSAOPass = SSAOPass;
 });

@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var AnaglyphEffect = function (renderer, width, height) {
         this.colorMatrixLeft = new THREE.Matrix3().fromArray([
@@ -118,5 +122,6 @@ define([
                 _material.dispose();
         };
     };
-    return AnaglyphEffect;
+
+    return threex.effects.AnaglyphEffect = AnaglyphEffect;
 });

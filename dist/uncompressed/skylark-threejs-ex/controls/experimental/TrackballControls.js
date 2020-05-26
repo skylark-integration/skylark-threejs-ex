@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var TrackballControls = function (object, domElement) {
         CameraControls.call(this, object, domElement);
@@ -13,5 +19,5 @@ define(["skylark-threejs"], function (THREE) {
     TrackballControls.prototype = Object.create(THREE.EventDispatcher.prototype);
     TrackballControls.prototype.constructor = TrackballControls;
     
-    return TrackballControls;
+    return threex.controls.experimental.TrackballControls = TrackballControls;
 });

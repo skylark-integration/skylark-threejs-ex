@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     'skylark-zlib/Inflate'
-], function (THREE, Inflate) {
+], function (
+    THREE,
+    threex, 
+    Inflate
+) {
     'use strict';
     var EXRLoader = function (manager) {
         THREE.DataTextureLoader.call(this, manager);
@@ -1268,5 +1273,6 @@ define([
             return THREE.DataTextureLoader.prototype.load.call(this, url, onLoadCallback, onProgress, onError);
         }
     });
-    return EXRLoader;
+
+    return threex.loaders.EXRLoader = EXRLoader;
 });

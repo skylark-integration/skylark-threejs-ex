@@ -1,6 +1,10 @@
 define([
-    "skylark-threejs"
-], function (THREE) {
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
 
     var TransformControlsPlane = function () {
@@ -80,5 +84,5 @@ define([
         isTransformControlsPlane: true
     });
     
-    return  TransformControlsPlane;
+    return  threex.controls.TransformControlsPlane = TransformControlsPlane;
 });

@@ -1,4 +1,10 @@
-define(["skylark-threejs"], function (THREE) {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var OceanShaders = {};
     OceanShaders['ocean_sim_vertex'] = {
@@ -281,5 +287,5 @@ define(["skylark-threejs"], function (THREE) {
             '}'
         ].join('\n')
     };
-    return OceanShaders;
+    return threex.shaders.OceanShaders = OceanShaders;
 });

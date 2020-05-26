@@ -1,4 +1,6 @@
-define(function () {
+define([
+    "../threex"
+],function (threex) {
     'use strict';
     var BasicShader = {
         uniforms: {},
@@ -13,5 +15,5 @@ define(function () {
             '}'
         ].join('\n')
     };
-    return  BasicShader ;
+    return  threex.shaders.BasicShader = BasicShader;
 });
