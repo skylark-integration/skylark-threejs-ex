@@ -293,5 +293,5 @@ define([
     LineMaterial.prototype.constructor = LineMaterial;
     LineMaterial.prototype.isLineMaterial = true;
 
-    return threex.lins.LineMaterial = LineMaterial;
+    return threex.lines.LineMaterial = LineMaterial;
 });

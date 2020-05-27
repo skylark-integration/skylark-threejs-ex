@@ -1,5 +1,4 @@
 define([
-	"skylark-threejs",
 	"./threex",
 
 	"./animation/AnimationClipCreator",
@@ -238,6 +237,6 @@ define([
 
 
 
-],function(THREE){
+],function(threex){
 	return threex;
 });

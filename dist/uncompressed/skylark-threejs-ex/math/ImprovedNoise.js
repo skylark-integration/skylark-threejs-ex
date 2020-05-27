@@ -1,4 +1,10 @@
-define(function () {
+define([
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ImprovedNoise = function () {
         var p = [

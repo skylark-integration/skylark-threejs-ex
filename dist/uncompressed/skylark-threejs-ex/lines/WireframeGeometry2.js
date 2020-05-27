@@ -1,7 +1,12 @@
 define([
     "skylark-threejs",
+    "../threex",
     './LineSegmentsGeometry'
-], function (THREE, LineSegmentsGeometry) {
+], function (
+    THREE,
+    threex,
+    LineSegmentsGeometry
+) {
     'use strict';
     var WireframeGeometry2 = function (geometry) {
         LineSegmentsGeometry.call(this);
@@ -12,5 +17,5 @@ define([
         constructor: WireframeGeometry2,
         isWireframeGeometry2: true
     });
-    return threex.lins.WireframeGeometry2 = WireframeGeometry2;
+    return threex.lines.WireframeGeometry2 = WireframeGeometry2;
 });

@@ -194,5 +194,5 @@ define([
         }
     });
 
-    return threex.lins.LineSegmentsGeometry = LineSegmentsGeometry;
+    return threex.lines.LineSegmentsGeometry = LineSegmentsGeometry;
 });

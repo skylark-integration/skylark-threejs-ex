@@ -60,43 +60,7 @@ define([
             '}'
         ].join('\n')
     };
-    Lensflare.Geometry = function () {
-        var geometry = new THREE.BufferGeometry();
-        var float32Array = new Float32Array([
-            -1,
-            -1,
-            0,
-            0,
-            0,
-            1,
-            -1,
-            0,
-            1,
-            0,
-            1,
-            1,
-            0,
-            1,
-            1,
-            -1,
-            1,
-            0,
-            0,
-            1
-        ]);
-        var interleavedBuffer = new THREE.InterleavedBuffer(float32Array, 5);
-        geometry.setIndex([
-            0,
-            1,
-            2,
-            0,
-            2,
-            3
-        ]);
-        geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
-        geometry.setAttribute('uv', new THREE.InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
-        return geometry;
-    }();
+
 
     return  threex.objects.LensflareElement = LensflareElement;
 });

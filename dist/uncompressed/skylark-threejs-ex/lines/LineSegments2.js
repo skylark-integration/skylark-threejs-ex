@@ -1,8 +1,14 @@
 define([
     "skylark-threejs",
+    "../threex",
     './LineSegmentsGeometry',
     './LineMaterial'
-], function (THREE, LineSegmentsGeometry, LineMaterial) {
+], function (
+    THREE,
+    threex,
+    LineSegmentsGeometry, 
+    LineMaterial
+) {
     'use strict';
     var LineSegments2 = function (geometry, material) {
         THREE.Mesh.call(this);
@@ -118,5 +124,5 @@ define([
         }()
     });
 
-    return threex.lins.LineSegments2 = LineSegments2;
+    return threex.lines.LineSegments2 = LineSegments2;
 });

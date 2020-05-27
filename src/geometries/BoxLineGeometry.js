@@ -48,5 +48,5 @@ define([
     BoxLineGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
     BoxLineGeometry.prototype.constructor = BoxLineGeometry;
 
-    return threex.geometries.BoxLineGeometry = BufferGeometry;
+    return threex.geometries.BoxLineGeometry = BoxLineGeometry;
 });

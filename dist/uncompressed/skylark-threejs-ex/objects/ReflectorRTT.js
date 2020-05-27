@@ -1,6 +1,8 @@
 define([
+    "../threex",
 	'../objects/Reflector'
 ], function (
+	threex,
 	Reflector
 ) {
     'use strict';

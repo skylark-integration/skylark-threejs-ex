@@ -5,5 +5,5 @@
  * @link https://github.com/skylark-integration/skylark-threejs-ex/
  * @license MIT
  */
-define(["skylark-threejs","./LineSegmentsGeometry"],function(e,r){"use strict";var t=function(t){r.call(this),this.type="WireframeGeometry2",this.fromWireframeGeometry(new e.WireframeGeometry(t))};return t.prototype=Object.assign(Object.create(r.prototype),{constructor:t,isWireframeGeometry2:!0}),threex.lins.WireframeGeometry2=t});
+define(["skylark-threejs","../threex","./LineSegmentsGeometry"],function(e,r,t){"use strict";var i=function(r){t.call(this),this.type="WireframeGeometry2",this.fromWireframeGeometry(new e.WireframeGeometry(r))};return i.prototype=Object.assign(Object.create(t.prototype),{constructor:i,isWireframeGeometry2:!0}),r.lines.WireframeGeometry2=i});
 //# sourceMappingURL=../sourcemaps/lines/WireframeGeometry2.js.map

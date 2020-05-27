@@ -21,5 +21,5 @@ define([
         isLine2: true
     });
 
-    return threex.lins.Line2 = Line2;
+    return threex.lines.Line2 = Line2;
 });

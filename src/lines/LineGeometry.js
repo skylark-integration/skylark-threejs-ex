@@ -55,5 +55,5 @@ define([
         }
     });
     
-    return threex.lins.LineGeometry = LineGeometry;
+    return threex.lines.LineGeometry = LineGeometry;
 });

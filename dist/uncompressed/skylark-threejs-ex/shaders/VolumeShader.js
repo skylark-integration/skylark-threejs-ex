@@ -1,6 +1,10 @@
 define([
-      "skylark-threejs"
-], function (THREE) {
+      "skylark-threejs",
+      "../threex"   
+], function (
+      THREE,
+      threex
+) {
     'use strict';
     var VolumeRenderShader1 = {
         uniforms: {

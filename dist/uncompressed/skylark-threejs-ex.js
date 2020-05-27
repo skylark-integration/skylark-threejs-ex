@@ -106,6 +106,7 @@ define('skylark-threejs-ex/threex',[
 		"lines":{},
 		"loaders" : {},
 		"math" : {},
+		"misc" : {},
 		"modifiers" : {},
 		"nodes" : {},
 		"objects":{},
@@ -22083,7 +22084,7 @@ define('skylark-threejs-ex/geometries/BoxLineGeometry',[
     BoxLineGeometry.prototype = Object.create(THREE.BufferGeometry.prototype);
     BoxLineGeometry.prototype.constructor = BoxLineGeometry;
 
-    return threex.geometries.BoxLineGeometry = BufferGeometry;
+    return threex.geometries.BoxLineGeometry = BoxLineGeometry;
 });
 define('skylark-threejs-ex/math/ConvexHull',[
     "skylark-threejs",
@@ -59927,7 +59928,7 @@ define('skylark-threejs-ex/lines/LineSegmentsGeometry',[
         }
     });
 
-    return threex.lins.LineSegmentsGeometry = LineSegmentsGeometry;
+    return threex.lines.LineSegmentsGeometry = LineSegmentsGeometry;
 });
 define('skylark-threejs-ex/lines/LineMaterial',[
     "skylark-threejs",
@@ -60224,13 +60225,19 @@ define('skylark-threejs-ex/lines/LineMaterial',[
     LineMaterial.prototype.constructor = LineMaterial;
     LineMaterial.prototype.isLineMaterial = true;
 
-    return threex.lins.LineMaterial = LineMaterial;
+    return threex.lines.LineMaterial = LineMaterial;
 });
 define('skylark-threejs-ex/lines/LineSegments2',[
     "skylark-threejs",
+    "../threex",
     './LineSegmentsGeometry',
     './LineMaterial'
-], function (THREE, LineSegmentsGeometry, LineMaterial) {
+], function (
+    THREE,
+    threex,
+    LineSegmentsGeometry, 
+    LineMaterial
+) {
     'use strict';
     var LineSegments2 = function (geometry, material) {
         THREE.Mesh.call(this);
@@ -60346,7 +60353,7 @@ define('skylark-threejs-ex/lines/LineSegments2',[
         }()
     });
 
-    return threex.lins.LineSegments2 = LineSegments2;
+    return threex.lines.LineSegments2 = LineSegments2;
 });
 define('skylark-threejs-ex/lines/LineGeometry',[
     "../threex",
@@ -60405,7 +60412,7 @@ define('skylark-threejs-ex/lines/LineGeometry',[
         }
     });
     
-    return threex.lins.LineGeometry = LineGeometry;
+    return threex.lines.LineGeometry = LineGeometry;
 });
 define('skylark-threejs-ex/lines/Line2',[
     "../threex",
@@ -60430,13 +60437,19 @@ define('skylark-threejs-ex/lines/Line2',[
         isLine2: true
     });
 
-    return threex.lins.Line2 = Line2;
+    return threex.lines.Line2 = Line2;
 });
 define('skylark-threejs-ex/lines/Wireframe',[
     "skylark-threejs",
+    "../threex",
     './LineSegmentsGeometry',
     './LineMaterial'
-], function (THREE, LineSegmentsGeometry, LineMaterial) {
+], function (
+    THREE, 
+    threex,
+    LineSegmentsGeometry, 
+    LineMaterial
+) {
     'use strict';
     var Wireframe = function (geometry, material) {
         THREE.Mesh.call(this);
@@ -60468,12 +60481,17 @@ define('skylark-threejs-ex/lines/Wireframe',[
             };
         }()
     });
-    return threex.lins.Wireframe = Wireframe;
+    return threex.lines.Wireframe = Wireframe;
 });
 define('skylark-threejs-ex/lines/WireframeGeometry2',[
     "skylark-threejs",
+    "../threex",
     './LineSegmentsGeometry'
-], function (THREE, LineSegmentsGeometry) {
+], function (
+    THREE,
+    threex,
+    LineSegmentsGeometry
+) {
     'use strict';
     var WireframeGeometry2 = function (geometry) {
         LineSegmentsGeometry.call(this);
@@ -60484,7 +60502,7 @@ define('skylark-threejs-ex/lines/WireframeGeometry2',[
         constructor: WireframeGeometry2,
         isWireframeGeometry2: true
     });
-    return threex.lins.WireframeGeometry2 = WireframeGeometry2;
+    return threex.lines.WireframeGeometry2 = WireframeGeometry2;
 });
 define('skylark-threejs-ex/loaders/TTFLoader',[
     "skylark-threejs",
@@ -80179,7 +80197,13 @@ define('skylark-threejs-ex/math/ColorConverter',[
     };
     return threex.math.ColorConverter = ColorConverter;
 });
-define('skylark-threejs-ex/math/ImprovedNoise',[],function () {
+define('skylark-threejs-ex/math/ImprovedNoise',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
     'use strict';
     var ImprovedNoise = function () {
         var p = [
@@ -86200,6 +86224,43 @@ define('skylark-threejs-ex/objects/Lensflare',[
     Lensflare.prototype.constructor = Lensflare;
     Lensflare.prototype.isLensflare = true;
 
+    Lensflare.Geometry = function () {
+        var geometry = new THREE.BufferGeometry();
+        var float32Array = new Float32Array([
+            -1,
+            -1,
+            0,
+            0,
+            0,
+            1,
+            -1,
+            0,
+            1,
+            0,
+            1,
+            1,
+            0,
+            1,
+            1,
+            -1,
+            1,
+            0,
+            0,
+            1
+        ]);
+        var interleavedBuffer = new THREE.InterleavedBuffer(float32Array, 5);
+        geometry.setIndex([
+            0,
+            1,
+            2,
+            0,
+            2,
+            3
+        ]);
+        geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
+        geometry.setAttribute('uv', new THREE.InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
+        return geometry;
+    }();
     return threex.objects.Lensflare = Lensflare;
 });
 define('skylark-threejs-ex/objects/LensflareElement',[
@@ -86264,43 +86325,7 @@ define('skylark-threejs-ex/objects/LensflareElement',[
             '}'
         ].join('\n')
     };
-    Lensflare.Geometry = function () {
-        var geometry = new THREE.BufferGeometry();
-        var float32Array = new Float32Array([
-            -1,
-            -1,
-            0,
-            0,
-            0,
-            1,
-            -1,
-            0,
-            1,
-            0,
-            1,
-            1,
-            0,
-            1,
-            1,
-            -1,
-            1,
-            0,
-            0,
-            1
-        ]);
-        var interleavedBuffer = new THREE.InterleavedBuffer(float32Array, 5);
-        geometry.setIndex([
-            0,
-            1,
-            2,
-            0,
-            2,
-            3
-        ]);
-        geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
-        geometry.setAttribute('uv', new THREE.InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
-        return geometry;
-    }();
+
 
     return  threex.objects.LensflareElement = LensflareElement;
 });
@@ -91440,8 +91465,10 @@ define('skylark-threejs-ex/objects/Reflector',[
     return threex.objects.Reflector = Reflector;
 });
 define('skylark-threejs-ex/objects/ReflectorRTT',[
+    "../threex",
 	'../objects/Reflector'
 ], function (
+	threex,
 	Reflector
 ) {
     'use strict';
@@ -94645,8 +94672,12 @@ define('skylark-threejs-ex/postprocessing/RenderPass',[
     return threex.postprocessing.RenderPass = RenderPass;
 });
 define('skylark-threejs-ex/shaders/SAOShader',[
-   "skylark-threejs"
-], function (THREE) {
+      "skylark-threejs",
+      "../threex"   
+], function (
+      THREE,
+      threex
+) {
     'use strict';
     var SAOShader = {
         defines: {
@@ -100775,8 +100806,12 @@ define('skylark-threejs-ex/shaders/VignetteShader',[
     return threex.shaders.VignetteShader = VignetteShader;
 });
 define('skylark-threejs-ex/shaders/VolumeShader',[
-      "skylark-threejs"
-], function (THREE) {
+      "skylark-threejs",
+      "../threex"   
+], function (
+      THREE,
+      threex
+) {
     'use strict';
     var VolumeRenderShader1 = {
         uniforms: {
@@ -101075,7 +101110,6 @@ define('skylark-threejs-ex/textures/FlakesTexture',[
     return threex.textures.FlakesTexture = FlakesTexture;
 });
 define('skylark-threejs-ex/main',[
-	"skylark-threejs",
 	"./threex",
 
 	"./animation/AnimationClipCreator",
@@ -101314,7 +101348,7 @@ define('skylark-threejs-ex/main',[
 
 
 
-],function(THREE){
+],function(threex){
 	return threex;
 });
 define('skylark-threejs-ex', ['skylark-threejs-ex/main'], function (main) { return main; });

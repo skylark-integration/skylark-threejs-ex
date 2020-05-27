@@ -18,6 +18,7 @@ define([
 		"lines":{},
 		"loaders" : {},
 		"math" : {},
+		"misc" : {},
 		"modifiers" : {},
 		"nodes" : {},
 		"objects":{},
