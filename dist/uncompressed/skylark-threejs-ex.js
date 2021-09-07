@@ -91466,7 +91466,7 @@ define('skylark-threejs-ex/objects/Reflector',[
 });
 define('skylark-threejs-ex/objects/ReflectorRTT',[
     "../threex",
-	'../objects/Reflector'
+	'./Reflector'
 ], function (
 	threex,
 	Reflector

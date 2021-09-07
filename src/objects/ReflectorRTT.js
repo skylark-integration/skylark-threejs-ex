@@ -1,6 +1,6 @@
 define([
     "../threex",
-	'../objects/Reflector'
+	'./Reflector'
 ], function (
 	threex,
 	Reflector
