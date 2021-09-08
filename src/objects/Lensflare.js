@@ -1,9 +1,11 @@
 define([
     "skylark-threejs",
-    "../threex"
+    "../threex",
+    "./LensflareElement"
 ], function (
     THREE,
-    threex
+    threex,
+    LensflareElement
 ) {
     'use strict';
     var Lensflare = function () {
