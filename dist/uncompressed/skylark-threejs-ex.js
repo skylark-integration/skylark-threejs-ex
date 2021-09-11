@@ -60504,131 +60504,6 @@ define('skylark-threejs-ex/lines/WireframeGeometry2',[
     });
     return threex.lines.WireframeGeometry2 = WireframeGeometry2;
 });
-define('skylark-threejs-ex/loaders/TTFLoader',[
-    "skylark-threejs",
-    "../threex"
-], function (
-    THREE,
-    threex
-) {
-    'use strict';
-    var TTFLoader = function (manager) {
-        THREE.Loader.call(this, manager);
-        this.reversed = false;
-    };
-    TTFLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
-        constructor: TTFLoader,
-        load: function (url, onLoad, onProgress, onError) {
-            var scope = this;
-            var loader = new THREE.FileLoader(this.manager);
-            loader.setPath(this.path);
-            loader.setResponseType('arraybuffer');
-            loader.load(url, function (buffer) {
-                onLoad(scope.parse(buffer));
-            }, onProgress, onError);
-        },
-        parse: function (arraybuffer) {
-            function convert(font, reversed) {
-                var round = Math.round;
-                var glyphs = {};
-                var scale = 100000 / ((font.unitsPerEm || 2048) * 72);
-                var glyphIndexMap = font.encoding.cmap.glyphIndexMap;
-                var unicodes = Object.keys(glyphIndexMap);
-                for (var i = 0; i < unicodes.length; i++) {
-                    var unicode = unicodes[i];
-                    var glyph = font.glyphs.glyphs[glyphIndexMap[unicode]];
-                    if (unicode !== undefined) {
-                        var token = {
-                            ha: round(glyph.advanceWidth * scale),
-                            x_min: round(glyph.xMin * scale),
-                            x_max: round(glyph.xMax * scale),
-                            o: ''
-                        };
-                        if (reversed) {
-                            glyph.path.commands = reverseCommands(glyph.path.commands);
-                        }
-                        glyph.path.commands.forEach(function (command) {
-                            if (command.type.toLowerCase() === 'c') {
-                                command.type = 'b';
-                            }
-                            token.o += command.type.toLowerCase() + ' ';
-                            if (command.x !== undefined && command.y !== undefined) {
-                                token.o += round(command.x * scale) + ' ' + round(command.y * scale) + ' ';
-                            }
-                            if (command.x1 !== undefined && command.y1 !== undefined) {
-                                token.o += round(command.x1 * scale) + ' ' + round(command.y1 * scale) + ' ';
-                            }
-                            if (command.x2 !== undefined && command.y2 !== undefined) {
-                                token.o += round(command.x2 * scale) + ' ' + round(command.y2 * scale) + ' ';
-                            }
-                        });
-                        glyphs[String.fromCodePoint(glyph.unicode)] = token;
-                    }
-                }
-                return {
-                    glyphs: glyphs,
-                    familyName: font.getEnglishName('fullName'),
-                    ascender: round(font.ascender * scale),
-                    descender: round(font.descender * scale),
-                    underlinePosition: font.tables.post.underlinePosition,
-                    underlineThickness: font.tables.post.underlineThickness,
-                    boundingBox: {
-                        xMin: font.tables.head.xMin,
-                        xMax: font.tables.head.xMax,
-                        yMin: font.tables.head.yMin,
-                        yMax: font.tables.head.yMax
-                    },
-                    resolution: 1000,
-                    original_font_information: font.tables.name
-                };
-            }
-            function reverseCommands(commands) {
-                var paths = [];
-                var path;
-                commands.forEach(function (c) {
-                    if (c.type.toLowerCase() === 'm') {
-                        path = [c];
-                        paths.push(path);
-                    } else if (c.type.toLowerCase() !== 'z') {
-                        path.push(c);
-                    }
-                });
-                var reversed = [];
-                paths.forEach(function (p) {
-                    var result = {
-                        type: 'm',
-                        x: p[p.length - 1].x,
-                        y: p[p.length - 1].y
-                    };
-                    reversed.push(result);
-                    for (var i = p.length - 1; i > 0; i--) {
-                        var command = p[i];
-                        var result = { type: command.type };
-                        if (command.x2 !== undefined && command.y2 !== undefined) {
-                            result.x1 = command.x2;
-                            result.y1 = command.y2;
-                            result.x2 = command.x1;
-                            result.y2 = command.y1;
-                        } else if (command.x1 !== undefined && command.y1 !== undefined) {
-                            result.x1 = command.x1;
-                            result.y1 = command.y1;
-                        }
-                        result.x = p[i - 1].x;
-                        result.y = p[i - 1].y;
-                        reversed.push(result);
-                    }
-                });
-                return reversed;
-            }
-            if (typeof opentype === 'undefined') {
-                console.warn("THREE.TTFLoader: The loader requires opentype.js. Make sure it's included before using the loader.");
-                return null;
-            }
-            return convert(opentype.parse(arraybuffer), this.reversed);
-        }
-    });
-    return threex.loaders.TTFLoader = TTFLoader;
-});
 define('skylark-threejs-ex/loaders/3MFLoader',[
     "skylark-threejs",
     "../threex"
@@ -64333,6 +64208,544 @@ define('skylark-threejs-ex/loaders/BabylonLoader',[
 	
 	return threex.loaders.BabylonLoader = BabylonLoader;
 });
+define('skylark-threejs-ex/loaders/BasisTextureLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var BasisTextureLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+        this.transcoderPath = '';
+        this.transcoderBinary = null;
+        this.transcoderPending = null;
+        this.workerLimit = 4;
+        this.workerPool = [];
+        this.workerNextTaskID = 1;
+        this.workerSourceURL = '';
+        this.workerConfig = {
+            format: null,
+            astcSupported: false,
+            bptcSupported: false,
+            etcSupported: false,
+            dxtSupported: false,
+            pvrtcSupported: false
+        };
+    };
+    BasisTextureLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: BasisTextureLoader,
+        setTranscoderPath: function (path) {
+            this.transcoderPath = path;
+            return this;
+        },
+        setWorkerLimit: function (workerLimit) {
+            this.workerLimit = workerLimit;
+            return this;
+        },
+        detectSupport: function (renderer) {
+            var config = this.workerConfig;
+            config.astcSupported = !!renderer.extensions.get('WEBGL_compressed_texture_astc');
+            config.bptcSupported = !!renderer.extensions.get('EXT_texture_compression_bptc');
+            config.etcSupported = !!renderer.extensions.get('WEBGL_compressed_texture_etc1');
+            config.dxtSupported = !!renderer.extensions.get('WEBGL_compressed_texture_s3tc');
+            config.pvrtcSupported = !!renderer.extensions.get('WEBGL_compressed_texture_pvrtc') || !!renderer.extensions.get('WEBKIT_WEBGL_compressed_texture_pvrtc');
+            if (config.astcSupported) {
+                config.format = BasisTextureLoader.BASIS_FORMAT.cTFASTC_4x4;
+            } else if (config.bptcSupported) {
+                config.format = BasisTextureLoader.BASIS_FORMAT.cTFBC7_M5;
+            } else if (config.dxtSupported) {
+                config.format = BasisTextureLoader.BASIS_FORMAT.cTFBC3;
+            } else if (config.pvrtcSupported) {
+                config.format = BasisTextureLoader.BASIS_FORMAT.cTFPVRTC1_4_RGBA;
+            } else if (config.etcSupported) {
+                config.format = BasisTextureLoader.BASIS_FORMAT.cTFETC1;
+            } else {
+                throw new Error('THREE.BasisTextureLoader: No suitable compressed texture format found.');
+            }
+            return this;
+        },
+        load: function (url, onLoad, onProgress, onError) {
+            var loader = new THREE.FileLoader(this.manager);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, buffer => {
+                this._createTexture(buffer).then(onLoad).catch(onError);
+            }, onProgress, onError);
+        },
+        _createTexture: function (buffer) {
+            var worker;
+            var taskID;
+            var taskCost = buffer.byteLength;
+            var texturePending = this._allocateWorker(taskCost).then(_worker => {
+                worker = _worker;
+                taskID = this.workerNextTaskID++;
+                return new Promise((resolve, reject) => {
+                    worker._callbacks[taskID] = {
+                        resolve,
+                        reject
+                    };
+                    worker.postMessage({
+                        type: 'transcode',
+                        id: taskID,
+                        buffer
+                    }, [buffer]);
+                });
+            }).then(message => {
+                var config = this.workerConfig;
+                var {width, height, mipmaps, format} = message;
+                var texture;
+                switch (format) {
+                case BasisTextureLoader.BASIS_FORMAT.cTFASTC_4x4:
+                    texture = new THREE.CompressedTexture(mipmaps, width, height, THREE.RGBA_ASTC_4x4_Format);
+                    break;
+                case BasisTextureLoader.BASIS_FORMAT.cTFBC7_M5:
+                    texture = new THREE.CompressedTexture(mipmaps, width, height, THREE.RGBA_BPTC_Format);
+                    break;
+                case BasisTextureLoader.BASIS_FORMAT.cTFBC1:
+                case BasisTextureLoader.BASIS_FORMAT.cTFBC3:
+                    texture = new THREE.CompressedTexture(mipmaps, width, height, BasisTextureLoader.DXT_FORMAT_MAP[config.format], THREE.UnsignedByteType);
+                    break;
+                case BasisTextureLoader.BASIS_FORMAT.cTFETC1:
+                    texture = new THREE.CompressedTexture(mipmaps, width, height, THREE.RGB_ETC1_Format);
+                    break;
+                case BasisTextureLoader.BASIS_FORMAT.cTFPVRTC1_4_RGB:
+                    texture = new THREE.CompressedTexture(mipmaps, width, height, THREE.RGB_PVRTC_4BPPV1_Format);
+                    break;
+                case BasisTextureLoader.BASIS_FORMAT.cTFPVRTC1_4_RGBA:
+                    texture = new THREE.CompressedTexture(mipmaps, width, height, THREE.RGBA_PVRTC_4BPPV1_Format);
+                    break;
+                default:
+                    throw new Error('THREE.BasisTextureLoader: No supported format available.');
+                }
+                texture.minFilter = mipmaps.length === 1 ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                texture.needsUpdate = true;
+                return texture;
+            });
+            texturePending.finally(() => {
+                if (worker && taskID) {
+                    worker._taskLoad -= taskCost;
+                    delete worker._callbacks[taskID];
+                }
+            });
+            return texturePending;
+        },
+        _initTranscoder: function () {
+            if (!this.transcoderPending) {
+                var jsLoader = new THREE.FileLoader(this.manager);
+                jsLoader.setPath(this.transcoderPath);
+                var jsContent = new Promise((resolve, reject) => {
+                    jsLoader.load('basis_transcoder', resolve, undefined, reject);
+                });
+                var binaryLoader = new THREE.FileLoader(this.manager);
+                binaryLoader.setPath(this.transcoderPath);
+                binaryLoader.setResponseType('arraybuffer');
+                var binaryContent = new Promise((resolve, reject) => {
+                    binaryLoader.load('basis_transcoder.wasm', resolve, undefined, reject);
+                });
+                this.transcoderPending = Promise.all([
+                    jsContent,
+                    binaryContent
+                ]).then(([jsContent, binaryContent]) => {
+                    var fn = BasisTextureLoader.BasisWorker.toString();
+                    var body = [
+                        '/* basis_transcoder.js */',
+                        jsContent,
+                        '/* worker */',
+                        fn.substring(fn.indexOf('{') + 1, fn.lastIndexOf('}'))
+                    ].join('\n');
+                    this.workerSourceURL = URL.createObjectURL(new Blob([body]));
+                    this.transcoderBinary = binaryContent;
+                });
+            }
+            return this.transcoderPending;
+        },
+        _allocateWorker: function (taskCost) {
+            return this._initTranscoder().then(() => {
+                if (this.workerPool.length < this.workerLimit) {
+                    var worker = new Worker(this.workerSourceURL);
+                    worker._callbacks = {};
+                    worker._taskLoad = 0;
+                    worker.postMessage({
+                        type: 'init',
+                        config: this.workerConfig,
+                        transcoderBinary: this.transcoderBinary
+                    });
+                    worker.onmessage = function (e) {
+                        var message = e.data;
+                        switch (message.type) {
+                        case 'transcode':
+                            worker._callbacks[message.id].resolve(message);
+                            break;
+                        case 'error':
+                            worker._callbacks[message.id].reject(message);
+                            break;
+                        default:
+                            console.error('THREE.BasisTextureLoader: Unexpected message, "' + message.type + '"');
+                        }
+                    };
+                    this.workerPool.push(worker);
+                } else {
+                    this.workerPool.sort(function (a, b) {
+                        return a._taskLoad > b._taskLoad ? -1 : 1;
+                    });
+                }
+                var worker = this.workerPool[this.workerPool.length - 1];
+                worker._taskLoad += taskCost;
+                return worker;
+            });
+        },
+        dispose: function () {
+            for (var i = 0; i < this.workerPool.length; i++) {
+                this.workerPool[i].terminate();
+            }
+            this.workerPool.length = 0;
+            return this;
+        }
+    });
+    BasisTextureLoader.BASIS_FORMAT = {
+        cTFETC1: 0,
+        cTFETC2: 1,
+        cTFBC1: 2,
+        cTFBC3: 3,
+        cTFBC4: 4,
+        cTFBC5: 5,
+        cTFBC7_M6_OPAQUE_ONLY: 6,
+        cTFBC7_M5: 7,
+        cTFPVRTC1_4_RGB: 8,
+        cTFPVRTC1_4_RGBA: 9,
+        cTFASTC_4x4: 10,
+        cTFATC_RGB: 11,
+        cTFATC_RGBA_INTERPOLATED_ALPHA: 12,
+        cTFRGBA32: 13,
+        cTFRGB565: 14,
+        cTFBGR565: 15,
+        cTFRGBA4444: 16
+    };
+    BasisTextureLoader.DXT_FORMAT = {
+        COMPRESSED_RGB_S3TC_DXT1_EXT: 33776,
+        COMPRESSED_RGBA_S3TC_DXT1_EXT: 33777,
+        COMPRESSED_RGBA_S3TC_DXT3_EXT: 33778,
+        COMPRESSED_RGBA_S3TC_DXT5_EXT: 33779
+    };
+    BasisTextureLoader.DXT_FORMAT_MAP = {};
+    BasisTextureLoader.DXT_FORMAT_MAP[BasisTextureLoader.BASIS_FORMAT.cTFBC1] = BasisTextureLoader.DXT_FORMAT.COMPRESSED_RGB_S3TC_DXT1_EXT;
+    BasisTextureLoader.DXT_FORMAT_MAP[BasisTextureLoader.BASIS_FORMAT.cTFBC3] = BasisTextureLoader.DXT_FORMAT.COMPRESSED_RGBA_S3TC_DXT5_EXT;
+    BasisTextureLoader.BasisWorker = function () {
+        var config;
+        var transcoderPending;
+        var _BasisFile;
+        onmessage = function (e) {
+            var message = e.data;
+            switch (message.type) {
+            case 'init':
+                config = message.config;
+                init(message.transcoderBinary);
+                break;
+            case 'transcode':
+                transcoderPending.then(() => {
+                    try {
+                        var {width, height, hasAlpha, mipmaps, format} = transcode(message.buffer);
+                        var buffers = [];
+                        for (var i = 0; i < mipmaps.length; ++i) {
+                            buffers.push(mipmaps[i].data.buffer);
+                        }
+                        self.postMessage({
+                            type: 'transcode',
+                            id: message.id,
+                            width,
+                            height,
+                            hasAlpha,
+                            mipmaps,
+                            format
+                        }, buffers);
+                    } catch (error) {
+                        console.error(error);
+                        self.postMessage({
+                            type: 'error',
+                            id: message.id,
+                            error: error.message
+                        });
+                    }
+                });
+                break;
+            }
+        };
+        function init(wasmBinary) {
+            var BasisModule;
+            transcoderPending = new Promise(resolve => {
+                BasisModule = {
+                    wasmBinary,
+                    onRuntimeInitialized: resolve
+                };
+                BASIS(BasisModule);
+            }).then(() => {
+                var {BasisFile, initializeBasis} = BasisModule;
+                _BasisFile = BasisFile;
+                initializeBasis();
+            });
+        }
+        function transcode(buffer) {
+            var basisFile = new _BasisFile(new Uint8Array(buffer));
+            var width = basisFile.getImageWidth(0, 0);
+            var height = basisFile.getImageHeight(0, 0);
+            var levels = basisFile.getNumLevels(0);
+            var hasAlpha = basisFile.getHasAlpha();
+            function cleanup() {
+                basisFile.close();
+                basisFile.delete();
+            }
+            if (!hasAlpha) {
+                switch (config.format) {
+                case 9:
+                    config.format = 8;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (!width || !height || !levels) {
+                cleanup();
+                throw new Error('THREE.BasisTextureLoader:  Invalid .basis file');
+            }
+            if (!basisFile.startTranscoding()) {
+                cleanup();
+                throw new Error('THREE.BasisTextureLoader: .startTranscoding failed');
+            }
+            var mipmaps = [];
+            for (var mip = 0; mip < levels; mip++) {
+                var mipWidth = basisFile.getImageWidth(0, mip);
+                var mipHeight = basisFile.getImageHeight(0, mip);
+                var dst = new Uint8Array(basisFile.getImageTranscodedSizeInBytes(0, mip, config.format));
+                var status = basisFile.transcodeImage(dst, 0, mip, config.format, 0, hasAlpha);
+                if (!status) {
+                    cleanup();
+                    throw new Error('THREE.BasisTextureLoader: .transcodeImage failed.');
+                }
+                mipmaps.push({
+                    data: dst,
+                    width: mipWidth,
+                    height: mipHeight
+                });
+            }
+            cleanup();
+            return {
+                width,
+                height,
+                hasAlpha,
+                mipmaps,
+                format: config.format
+            };
+        }
+    };
+
+    return threex.loaders.BasisTextureLoader = BasisTextureLoader;
+});
+define('skylark-threejs-ex/loaders/BVHLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var BVHLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+        this.animateBonePositions = true;
+        this.animateBoneRotations = true;
+    };
+    BVHLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: BVHLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(scope.manager);
+            loader.setPath(scope.path);
+            loader.load(url, function (text) {
+                onLoad(scope.parse(text));
+            }, onProgress, onError);
+        },
+        parse: function (text) {
+            function readBvh(lines) {
+                if (nextLine(lines) !== 'HIERARCHY') {
+                    console.error('THREE.BVHLoader: HIERARCHY expected.');
+                }
+                var list = [];
+                var root = readNode(lines, nextLine(lines), list);
+                if (nextLine(lines) !== 'MOTION') {
+                    console.error('THREE.BVHLoader: MOTION expected.');
+                }
+                var tokens = nextLine(lines).split(/[\s]+/);
+                var numFrames = parseInt(tokens[1]);
+                if (isNaN(numFrames)) {
+                    console.error('THREE.BVHLoader: Failed to read number of frames.');
+                }
+                tokens = nextLine(lines).split(/[\s]+/);
+                var frameTime = parseFloat(tokens[2]);
+                if (isNaN(frameTime)) {
+                    console.error('THREE.BVHLoader: Failed to read frame time.');
+                }
+                for (var i = 0; i < numFrames; i++) {
+                    tokens = nextLine(lines).split(/[\s]+/);
+                    readFrameData(tokens, i * frameTime, root);
+                }
+                return list;
+            }
+            function readFrameData(data, frameTime, bone) {
+                if (bone.type === 'ENDSITE')
+                    return;
+                var keyframe = {
+                    time: frameTime,
+                    position: new THREE.Vector3(),
+                    rotation: new THREE.Quaternion()
+                };
+                bone.frames.push(keyframe);
+                var quat = new THREE.Quaternion();
+                var vx = new THREE.Vector3(1, 0, 0);
+                var vy = new THREE.Vector3(0, 1, 0);
+                var vz = new THREE.Vector3(0, 0, 1);
+                for (var i = 0; i < bone.channels.length; i++) {
+                    switch (bone.channels[i]) {
+                    case 'Xposition':
+                        keyframe.position.x = parseFloat(data.shift().trim());
+                        break;
+                    case 'Yposition':
+                        keyframe.position.y = parseFloat(data.shift().trim());
+                        break;
+                    case 'Zposition':
+                        keyframe.position.z = parseFloat(data.shift().trim());
+                        break;
+                    case 'Xrotation':
+                        quat.setFromAxisAngle(vx, parseFloat(data.shift().trim()) * Math.PI / 180);
+                        keyframe.rotation.multiply(quat);
+                        break;
+                    case 'Yrotation':
+                        quat.setFromAxisAngle(vy, parseFloat(data.shift().trim()) * Math.PI / 180);
+                        keyframe.rotation.multiply(quat);
+                        break;
+                    case 'Zrotation':
+                        quat.setFromAxisAngle(vz, parseFloat(data.shift().trim()) * Math.PI / 180);
+                        keyframe.rotation.multiply(quat);
+                        break;
+                    default:
+                        console.warn('THREE.BVHLoader: Invalid channel type.');
+                    }
+                }
+                for (var i = 0; i < bone.children.length; i++) {
+                    readFrameData(data, frameTime, bone.children[i]);
+                }
+            }
+            function readNode(lines, firstline, list) {
+                var node = {
+                    name: '',
+                    type: '',
+                    frames: []
+                };
+                list.push(node);
+                var tokens = firstline.split(/[\s]+/);
+                if (tokens[0].toUpperCase() === 'END' && tokens[1].toUpperCase() === 'SITE') {
+                    node.type = 'ENDSITE';
+                    node.name = 'ENDSITE';
+                } else {
+                    node.name = tokens[1];
+                    node.type = tokens[0].toUpperCase();
+                }
+                if (nextLine(lines) !== '{') {
+                    console.error('THREE.BVHLoader: Expected opening { after type & name');
+                }
+                tokens = nextLine(lines).split(/[\s]+/);
+                if (tokens[0] !== 'OFFSET') {
+                    console.error('THREE.BVHLoader: Expected OFFSET but got: ' + tokens[0]);
+                }
+                if (tokens.length !== 4) {
+                    console.error('THREE.BVHLoader: Invalid number of values for OFFSET.');
+                }
+                var offset = new THREE.Vector3(parseFloat(tokens[1]), parseFloat(tokens[2]), parseFloat(tokens[3]));
+                if (isNaN(offset.x) || isNaN(offset.y) || isNaN(offset.z)) {
+                    console.error('THREE.BVHLoader: Invalid values of OFFSET.');
+                }
+                node.offset = offset;
+                if (node.type !== 'ENDSITE') {
+                    tokens = nextLine(lines).split(/[\s]+/);
+                    if (tokens[0] !== 'CHANNELS') {
+                        console.error('THREE.BVHLoader: Expected CHANNELS definition.');
+                    }
+                    var numChannels = parseInt(tokens[1]);
+                    node.channels = tokens.splice(2, numChannels);
+                    node.children = [];
+                }
+                while (true) {
+                    var line = nextLine(lines);
+                    if (line === '}') {
+                        return node;
+                    } else {
+                        node.children.push(readNode(lines, line, list));
+                    }
+                }
+            }
+            function toTHREEBone(source, list) {
+                var bone = new THREE.Bone();
+                list.push(bone);
+                bone.position.add(source.offset);
+                bone.name = source.name;
+                if (source.type !== 'ENDSITE') {
+                    for (var i = 0; i < source.children.length; i++) {
+                        bone.add(toTHREEBone(source.children[i], list));
+                    }
+                }
+                return bone;
+            }
+            function toTHREEAnimation(bones) {
+                var tracks = [];
+                for (var i = 0; i < bones.length; i++) {
+                    var bone = bones[i];
+                    if (bone.type === 'ENDSITE')
+                        continue;
+                    var times = [];
+                    var positions = [];
+                    var rotations = [];
+                    for (var j = 0; j < bone.frames.length; j++) {
+                        var frame = bone.frames[j];
+                        times.push(frame.time);
+                        positions.push(frame.position.x + bone.offset.x);
+                        positions.push(frame.position.y + bone.offset.y);
+                        positions.push(frame.position.z + bone.offset.z);
+                        rotations.push(frame.rotation.x);
+                        rotations.push(frame.rotation.y);
+                        rotations.push(frame.rotation.z);
+                        rotations.push(frame.rotation.w);
+                    }
+                    if (scope.animateBonePositions) {
+                        tracks.push(new THREE.VectorKeyframeTrack('.bones[' + bone.name + '].position', times, positions));
+                    }
+                    if (scope.animateBoneRotations) {
+                        tracks.push(new THREE.QuaternionKeyframeTrack('.bones[' + bone.name + '].quaternion', times, rotations));
+                    }
+                }
+                return new THREE.AnimationClip('animation', -1, tracks);
+            }
+            function nextLine(lines) {
+                var line;
+                while ((line = lines.shift().trim()).length === 0) {
+                }
+                return line;
+            }
+            var scope = this;
+            var lines = text.split(/[\r\n]+/g);
+            var bones = readBvh(lines);
+            var threeBones = [];
+            toTHREEBone(bones[0], threeBones);
+            var threeClip = toTHREEAnimation(bones);
+            return {
+                skeleton: new THREE.Skeleton(threeBones),
+                clip: threeClip
+            };
+        }
+    });
+
+    return threex.loaders.BVHLoader = BVHLoader;
+});
 define('skylark-threejs-ex/loaders/TGALoader',[
     "skylark-threejs",
     "../threex"
@@ -66998,6 +67411,168 @@ define('skylark-threejs-ex/loaders/ColladaLoader',[
 
     return threex.loaders.ColladaLoader = ColladaLoader;
 });
+define('skylark-threejs-ex/loaders/DDSLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var DDSLoader = function (manager) {
+        THREE.CompressedTextureLoader.call(this, manager);
+    };
+    DDSLoader.prototype = Object.assign(Object.create(THREE.CompressedTextureLoader.prototype), {
+        constructor: DDSLoader,
+        parse: function (buffer, loadMipmaps) {
+            var dds = {
+                mipmaps: [],
+                width: 0,
+                height: 0,
+                format: null,
+                mipmapCount: 1
+            };
+            var DDS_MAGIC = 542327876;
+            var DDSD_CAPS = 1, DDSD_HEIGHT = 2, DDSD_WIDTH = 4, DDSD_PITCH = 8, DDSD_PIXELFORMAT = 4096, DDSD_MIPMAPCOUNT = 131072, DDSD_LINEARSIZE = 524288, DDSD_DEPTH = 8388608;
+            var DDSCAPS_COMPLEX = 8, DDSCAPS_MIPMAP = 4194304, DDSCAPS_TEXTURE = 4096;
+            var DDSCAPS2_CUBEMAP = 512, DDSCAPS2_CUBEMAP_POSITIVEX = 1024, DDSCAPS2_CUBEMAP_NEGATIVEX = 2048, DDSCAPS2_CUBEMAP_POSITIVEY = 4096, DDSCAPS2_CUBEMAP_NEGATIVEY = 8192, DDSCAPS2_CUBEMAP_POSITIVEZ = 16384, DDSCAPS2_CUBEMAP_NEGATIVEZ = 32768, DDSCAPS2_VOLUME = 2097152;
+            var DDPF_ALPHAPIXELS = 1, DDPF_ALPHA = 2, DDPF_FOURCC = 4, DDPF_RGB = 64, DDPF_YUV = 512, DDPF_LUMINANCE = 131072;
+            function fourCCToInt32(value) {
+                return value.charCodeAt(0) + (value.charCodeAt(1) << 8) + (value.charCodeAt(2) << 16) + (value.charCodeAt(3) << 24);
+            }
+            function int32ToFourCC(value) {
+                return String.fromCharCode(value & 255, value >> 8 & 255, value >> 16 & 255, value >> 24 & 255);
+            }
+            function loadARGBMip(buffer, dataOffset, width, height) {
+                var dataLength = width * height * 4;
+                var srcBuffer = new Uint8Array(buffer, dataOffset, dataLength);
+                var byteArray = new Uint8Array(dataLength);
+                var dst = 0;
+                var src = 0;
+                for (var y = 0; y < height; y++) {
+                    for (var x = 0; x < width; x++) {
+                        var b = srcBuffer[src];
+                        src++;
+                        var g = srcBuffer[src];
+                        src++;
+                        var r = srcBuffer[src];
+                        src++;
+                        var a = srcBuffer[src];
+                        src++;
+                        byteArray[dst] = r;
+                        dst++;
+                        byteArray[dst] = g;
+                        dst++;
+                        byteArray[dst] = b;
+                        dst++;
+                        byteArray[dst] = a;
+                        dst++;
+                    }
+                }
+                return byteArray;
+            }
+            var FOURCC_DXT1 = fourCCToInt32('DXT1');
+            var FOURCC_DXT3 = fourCCToInt32('DXT3');
+            var FOURCC_DXT5 = fourCCToInt32('DXT5');
+            var FOURCC_ETC1 = fourCCToInt32('ETC1');
+            var headerLengthInt = 31;
+            var off_magic = 0;
+            var off_size = 1;
+            var off_flags = 2;
+            var off_height = 3;
+            var off_width = 4;
+            var off_mipmapCount = 7;
+            var off_pfFlags = 20;
+            var off_pfFourCC = 21;
+            var off_RGBBitCount = 22;
+            var off_RBitMask = 23;
+            var off_GBitMask = 24;
+            var off_BBitMask = 25;
+            var off_ABitMask = 26;
+            var off_caps = 27;
+            var off_caps2 = 28;
+            var off_caps3 = 29;
+            var off_caps4 = 30;
+            var header = new Int32Array(buffer, 0, headerLengthInt);
+            if (header[off_magic] !== DDS_MAGIC) {
+                console.error('THREE.DDSLoader.parse: Invalid magic number in DDS header.');
+                return dds;
+            }
+            if (!header[off_pfFlags] & DDPF_FOURCC) {
+                console.error('THREE.DDSLoader.parse: Unsupported format, must contain a FourCC code.');
+                return dds;
+            }
+            var blockBytes;
+            var fourCC = header[off_pfFourCC];
+            var isRGBAUncompressed = false;
+            switch (fourCC) {
+            case FOURCC_DXT1:
+                blockBytes = 8;
+                dds.format = THREE.RGB_S3TC_DXT1_Format;
+                break;
+            case FOURCC_DXT3:
+                blockBytes = 16;
+                dds.format = THREE.RGBA_S3TC_DXT3_Format;
+                break;
+            case FOURCC_DXT5:
+                blockBytes = 16;
+                dds.format = THREE.RGBA_S3TC_DXT5_Format;
+                break;
+            case FOURCC_ETC1:
+                blockBytes = 8;
+                dds.format = THREE.RGB_ETC1_Format;
+                break;
+            default:
+                if (header[off_RGBBitCount] === 32 && header[off_RBitMask] & 16711680 && header[off_GBitMask] & 65280 && header[off_BBitMask] & 255 && header[off_ABitMask] & 4278190080) {
+                    isRGBAUncompressed = true;
+                    blockBytes = 64;
+                    dds.format = THREE.RGBAFormat;
+                } else {
+                    console.error('THREE.DDSLoader.parse: Unsupported FourCC code ', int32ToFourCC(fourCC));
+                    return dds;
+                }
+            }
+            dds.mipmapCount = 1;
+            if (header[off_flags] & DDSD_MIPMAPCOUNT && loadMipmaps !== false) {
+                dds.mipmapCount = Math.max(1, header[off_mipmapCount]);
+            }
+            var caps2 = header[off_caps2];
+            dds.isCubemap = caps2 & DDSCAPS2_CUBEMAP ? true : false;
+            if (dds.isCubemap && (!(caps2 & DDSCAPS2_CUBEMAP_POSITIVEX) || !(caps2 & DDSCAPS2_CUBEMAP_NEGATIVEX) || !(caps2 & DDSCAPS2_CUBEMAP_POSITIVEY) || !(caps2 & DDSCAPS2_CUBEMAP_NEGATIVEY) || !(caps2 & DDSCAPS2_CUBEMAP_POSITIVEZ) || !(caps2 & DDSCAPS2_CUBEMAP_NEGATIVEZ))) {
+                console.error('THREE.DDSLoader.parse: Incomplete cubemap faces');
+                return dds;
+            }
+            dds.width = header[off_width];
+            dds.height = header[off_height];
+            var dataOffset = header[off_size] + 4;
+            var faces = dds.isCubemap ? 6 : 1;
+            for (var face = 0; face < faces; face++) {
+                var width = dds.width;
+                var height = dds.height;
+                for (var i = 0; i < dds.mipmapCount; i++) {
+                    if (isRGBAUncompressed) {
+                        var byteArray = loadARGBMip(buffer, dataOffset, width, height);
+                        var dataLength = byteArray.length;
+                    } else {
+                        var dataLength = Math.max(4, width) / 4 * Math.max(4, height) / 4 * blockBytes;
+                        var byteArray = new Uint8Array(buffer, dataOffset, dataLength);
+                    }
+                    var mipmap = {
+                        'data': byteArray,
+                        'width': width,
+                        'height': height
+                    };
+                    dds.mipmaps.push(mipmap);
+                    dataOffset += dataLength;
+                    width = Math.max(width >> 1, 1);
+                    height = Math.max(height >> 1, 1);
+                }
+            }
+            return dds;
+        }
+    });
+    return threex.loaders.DDSLoader = DDSLoader;
+});
 define('skylark-threejs-ex/loaders/DRACOLoader',[
     "skylark-threejs",
     "../threex"
@@ -67403,6 +67978,1284 @@ define('skylark-threejs-ex/loaders/DRACOLoader',[
     };
 
     return threex.loaders.DRACOLoader = DRACOLoader;
+});
+define('skylark-threejs-ex/loaders/EXRLoader',[
+    "skylark-threejs",
+    "../threex",
+    'skylark-zlib/Inflate'
+], function (
+    THREE,
+    threex, 
+    Inflate
+) {
+    'use strict';
+    var EXRLoader = function (manager) {
+        THREE.DataTextureLoader.call(this, manager);
+        this.type = THREE.FloatType;
+    };
+    EXRLoader.prototype = Object.assign(Object.create(THREE.DataTextureLoader.prototype), {
+        constructor: EXRLoader,
+        parse: function (buffer) {
+            const USHORT_RANGE = 1 << 16;
+            const BITMAP_SIZE = USHORT_RANGE >> 3;
+            const HUF_ENCBITS = 16;
+            const HUF_DECBITS = 14;
+            const HUF_ENCSIZE = (1 << HUF_ENCBITS) + 1;
+            const HUF_DECSIZE = 1 << HUF_DECBITS;
+            const HUF_DECMASK = HUF_DECSIZE - 1;
+            const SHORT_ZEROCODE_RUN = 59;
+            const LONG_ZEROCODE_RUN = 63;
+            const SHORTEST_LONG_RUN = 2 + LONG_ZEROCODE_RUN - SHORT_ZEROCODE_RUN;
+            const ULONG_SIZE = 8;
+            const FLOAT32_SIZE = 4;
+            const INT32_SIZE = 4;
+            const INT16_SIZE = 2;
+            const INT8_SIZE = 1;
+            const STATIC_HUFFMAN = 0;
+            const DEFLATE = 1;
+            const UNKNOWN = 0;
+            const LOSSY_DCT = 1;
+            const RLE = 2;
+            const logBase = Math.pow(2.7182818, 2.2);
+            function reverseLutFromBitmap(bitmap, lut) {
+                var k = 0;
+                for (var i = 0; i < USHORT_RANGE; ++i) {
+                    if (i == 0 || bitmap[i >> 3] & 1 << (i & 7)) {
+                        lut[k++] = i;
+                    }
+                }
+                var n = k - 1;
+                while (k < USHORT_RANGE)
+                    lut[k++] = 0;
+                return n;
+            }
+            function hufClearDecTable(hdec) {
+                for (var i = 0; i < HUF_DECSIZE; i++) {
+                    hdec[i] = {};
+                    hdec[i].len = 0;
+                    hdec[i].lit = 0;
+                    hdec[i].p = null;
+                }
+            }
+            const getBitsReturn = {
+                l: 0,
+                c: 0,
+                lc: 0
+            };
+            function getBits(nBits, c, lc, uInt8Array, inOffset) {
+                while (lc < nBits) {
+                    c = c << 8 | parseUint8Array(uInt8Array, inOffset);
+                    lc += 8;
+                }
+                lc -= nBits;
+                getBitsReturn.l = c >> lc & (1 << nBits) - 1;
+                getBitsReturn.c = c;
+                getBitsReturn.lc = lc;
+            }
+            const hufTableBuffer = new Array(59);
+            function hufCanonicalCodeTable(hcode) {
+                for (var i = 0; i <= 58; ++i)
+                    hufTableBuffer[i] = 0;
+                for (var i = 0; i < HUF_ENCSIZE; ++i)
+                    hufTableBuffer[hcode[i]] += 1;
+                var c = 0;
+                for (var i = 58; i > 0; --i) {
+                    var nc = c + hufTableBuffer[i] >> 1;
+                    hufTableBuffer[i] = c;
+                    c = nc;
+                }
+                for (var i = 0; i < HUF_ENCSIZE; ++i) {
+                    var l = hcode[i];
+                    if (l > 0)
+                        hcode[i] = l | hufTableBuffer[l]++ << 6;
+                }
+            }
+            function hufUnpackEncTable(uInt8Array, inDataView, inOffset, ni, im, iM, hcode) {
+                var p = inOffset;
+                var c = 0;
+                var lc = 0;
+                for (; im <= iM; im++) {
+                    if (p.value - inOffset.value > ni)
+                        return false;
+                    getBits(6, c, lc, uInt8Array, p);
+                    var l = getBitsReturn.l;
+                    c = getBitsReturn.c;
+                    lc = getBitsReturn.lc;
+                    hcode[im] = l;
+                    if (l == LONG_ZEROCODE_RUN) {
+                        if (p.value - inOffset.value > ni) {
+                            throw 'Something wrong with hufUnpackEncTable';
+                        }
+                        getBits(8, c, lc, uInt8Array, p);
+                        var zerun = getBitsReturn.l + SHORTEST_LONG_RUN;
+                        c = getBitsReturn.c;
+                        lc = getBitsReturn.lc;
+                        if (im + zerun > iM + 1) {
+                            throw 'Something wrong with hufUnpackEncTable';
+                        }
+                        while (zerun--)
+                            hcode[im++] = 0;
+                        im--;
+                    } else if (l >= SHORT_ZEROCODE_RUN) {
+                        var zerun = l - SHORT_ZEROCODE_RUN + 2;
+                        if (im + zerun > iM + 1) {
+                            throw 'Something wrong with hufUnpackEncTable';
+                        }
+                        while (zerun--)
+                            hcode[im++] = 0;
+                        im--;
+                    }
+                }
+                hufCanonicalCodeTable(hcode);
+            }
+            function hufLength(code) {
+                return code & 63;
+            }
+            function hufCode(code) {
+                return code >> 6;
+            }
+            function hufBuildDecTable(hcode, im, iM, hdecod) {
+                for (; im <= iM; im++) {
+                    var c = hufCode(hcode[im]);
+                    var l = hufLength(hcode[im]);
+                    if (c >> l) {
+                        throw 'Invalid table entry';
+                    }
+                    if (l > HUF_DECBITS) {
+                        var pl = hdecod[c >> l - HUF_DECBITS];
+                        if (pl.len) {
+                            throw 'Invalid table entry';
+                        }
+                        pl.lit++;
+                        if (pl.p) {
+                            var p = pl.p;
+                            pl.p = new Array(pl.lit);
+                            for (var i = 0; i < pl.lit - 1; ++i) {
+                                pl.p[i] = p[i];
+                            }
+                        } else {
+                            pl.p = new Array(1);
+                        }
+                        pl.p[pl.lit - 1] = im;
+                    } else if (l) {
+                        var plOffset = 0;
+                        for (var i = 1 << HUF_DECBITS - l; i > 0; i--) {
+                            var pl = hdecod[(c << HUF_DECBITS - l) + plOffset];
+                            if (pl.len || pl.p) {
+                                throw 'Invalid table entry';
+                            }
+                            pl.len = l;
+                            pl.lit = im;
+                            plOffset++;
+                        }
+                    }
+                }
+                return true;
+            }
+            const getCharReturn = {
+                c: 0,
+                lc: 0
+            };
+            function getChar(c, lc, uInt8Array, inOffset) {
+                c = c << 8 | parseUint8Array(uInt8Array, inOffset);
+                lc += 8;
+                getCharReturn.c = c;
+                getCharReturn.lc = lc;
+            }
+            const getCodeReturn = {
+                c: 0,
+                lc: 0
+            };
+            function getCode(po, rlc, c, lc, uInt8Array, inDataView, inOffset, outBuffer, outBufferOffset, outBufferEndOffset) {
+                if (po == rlc) {
+                    if (lc < 8) {
+                        getChar(c, lc, uInt8Array, inOffset);
+                        c = getCharReturn.c;
+                        lc = getCharReturn.lc;
+                    }
+                    lc -= 8;
+                    var cs = c >> lc;
+                    var cs = new Uint8Array([cs])[0];
+                    if (outBufferOffset.value + cs > outBufferEndOffset) {
+                        return false;
+                    }
+                    var s = outBuffer[outBufferOffset.value - 1];
+                    while (cs-- > 0) {
+                        outBuffer[outBufferOffset.value++] = s;
+                    }
+                } else if (outBufferOffset.value < outBufferEndOffset) {
+                    outBuffer[outBufferOffset.value++] = po;
+                } else {
+                    return false;
+                }
+                getCodeReturn.c = c;
+                getCodeReturn.lc = lc;
+            }
+            function UInt16(value) {
+                return value & 65535;
+            }
+            function Int16(value) {
+                var ref = UInt16(value);
+                return ref > 32767 ? ref - 65536 : ref;
+            }
+            const wdec14Return = {
+                a: 0,
+                b: 0
+            };
+            function wdec14(l, h) {
+                var ls = Int16(l);
+                var hs = Int16(h);
+                var hi = hs;
+                var ai = ls + (hi & 1) + (hi >> 1);
+                var as = ai;
+                var bs = ai - hi;
+                wdec14Return.a = as;
+                wdec14Return.b = bs;
+            }
+            function wav2Decode(buffer, j, nx, ox, ny, oy) {
+                var n = nx > ny ? ny : nx;
+                var p = 1;
+                var p2;
+                while (p <= n)
+                    p <<= 1;
+                p >>= 1;
+                p2 = p;
+                p >>= 1;
+                while (p >= 1) {
+                    var py = 0;
+                    var ey = py + oy * (ny - p2);
+                    var oy1 = oy * p;
+                    var oy2 = oy * p2;
+                    var ox1 = ox * p;
+                    var ox2 = ox * p2;
+                    var i00, i01, i10, i11;
+                    for (; py <= ey; py += oy2) {
+                        var px = py;
+                        var ex = py + ox * (nx - p2);
+                        for (; px <= ex; px += ox2) {
+                            var p01 = px + ox1;
+                            var p10 = px + oy1;
+                            var p11 = p10 + ox1;
+                            wdec14(buffer[px + j], buffer[p10 + j]);
+                            i00 = wdec14Return.a;
+                            i10 = wdec14Return.b;
+                            wdec14(buffer[p01 + j], buffer[p11 + j]);
+                            i01 = wdec14Return.a;
+                            i11 = wdec14Return.b;
+                            wdec14(i00, i01);
+                            buffer[px + j] = wdec14Return.a;
+                            buffer[p01 + j] = wdec14Return.b;
+                            wdec14(i10, i11);
+                            buffer[p10 + j] = wdec14Return.a;
+                            buffer[p11 + j] = wdec14Return.b;
+                        }
+                        if (nx & p) {
+                            var p10 = px + oy1;
+                            wdec14(buffer[px + j], buffer[p10 + j]);
+                            i00 = wdec14Return.a;
+                            buffer[p10 + j] = wdec14Return.b;
+                            buffer[px + j] = i00;
+                        }
+                    }
+                    if (ny & p) {
+                        var px = py;
+                        var ex = py + ox * (nx - p2);
+                        for (; px <= ex; px += ox2) {
+                            var p01 = px + ox1;
+                            wdec14(buffer[px + j], buffer[p01 + j]);
+                            i00 = wdec14Return.a;
+                            buffer[p01 + j] = wdec14Return.b;
+                            buffer[px + j] = i00;
+                        }
+                    }
+                    p2 = p;
+                    p >>= 1;
+                }
+                return py;
+            }
+            function hufDecode(encodingTable, decodingTable, uInt8Array, inDataView, inOffset, ni, rlc, no, outBuffer, outOffset) {
+                var c = 0;
+                var lc = 0;
+                var outBufferEndOffset = no;
+                var inOffsetEnd = Math.trunc(inOffset.value + (ni + 7) / 8);
+                while (inOffset.value < inOffsetEnd) {
+                    getChar(c, lc, uInt8Array, inOffset);
+                    c = getCharReturn.c;
+                    lc = getCharReturn.lc;
+                    while (lc >= HUF_DECBITS) {
+                        var index = c >> lc - HUF_DECBITS & HUF_DECMASK;
+                        var pl = decodingTable[index];
+                        if (pl.len) {
+                            lc -= pl.len;
+                            getCode(pl.lit, rlc, c, lc, uInt8Array, inDataView, inOffset, outBuffer, outOffset, outBufferEndOffset);
+                            c = getCodeReturn.c;
+                            lc = getCodeReturn.lc;
+                        } else {
+                            if (!pl.p) {
+                                throw 'hufDecode issues';
+                            }
+                            var j;
+                            for (j = 0; j < pl.lit; j++) {
+                                var l = hufLength(encodingTable[pl.p[j]]);
+                                while (lc < l && inOffset.value < inOffsetEnd) {
+                                    getChar(c, lc, uInt8Array, inOffset);
+                                    c = getCharReturn.c;
+                                    lc = getCharReturn.lc;
+                                }
+                                if (lc >= l) {
+                                    if (hufCode(encodingTable[pl.p[j]]) == (c >> lc - l & (1 << l) - 1)) {
+                                        lc -= l;
+                                        getCode(pl.p[j], rlc, c, lc, uInt8Array, inDataView, inOffset, outBuffer, outOffset, outBufferEndOffset);
+                                        c = getCodeReturn.c;
+                                        lc = getCodeReturn.lc;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (j == pl.lit) {
+                                throw 'hufDecode issues';
+                            }
+                        }
+                    }
+                }
+                var i = 8 - ni & 7;
+                c >>= i;
+                lc -= i;
+                while (lc > 0) {
+                    var pl = decodingTable[c << HUF_DECBITS - lc & HUF_DECMASK];
+                    if (pl.len) {
+                        lc -= pl.len;
+                        getCode(pl.lit, rlc, c, lc, uInt8Array, inDataView, inOffset, outBuffer, outOffset, outBufferEndOffset);
+                        c = getCodeReturn.c;
+                        lc = getCodeReturn.lc;
+                    } else {
+                        throw 'hufDecode issues';
+                    }
+                }
+                return true;
+            }
+            function hufUncompress(uInt8Array, inDataView, inOffset, nCompressed, outBuffer, nRaw) {
+                var outOffset = { value: 0 };
+                var initialInOffset = inOffset.value;
+                var im = parseUint32(inDataView, inOffset);
+                var iM = parseUint32(inDataView, inOffset);
+                inOffset.value += 4;
+                var nBits = parseUint32(inDataView, inOffset);
+                inOffset.value += 4;
+                if (im < 0 || im >= HUF_ENCSIZE || iM < 0 || iM >= HUF_ENCSIZE) {
+                    throw 'Something wrong with HUF_ENCSIZE';
+                }
+                var freq = new Array(HUF_ENCSIZE);
+                var hdec = new Array(HUF_DECSIZE);
+                hufClearDecTable(hdec);
+                var ni = nCompressed - (inOffset.value - initialInOffset);
+                hufUnpackEncTable(uInt8Array, inDataView, inOffset, ni, im, iM, freq);
+                if (nBits > 8 * (nCompressed - (inOffset.value - initialInOffset))) {
+                    throw 'Something wrong with hufUncompress';
+                }
+                hufBuildDecTable(freq, im, iM, hdec);
+                hufDecode(freq, hdec, uInt8Array, inDataView, inOffset, nBits, iM, nRaw, outBuffer, outOffset);
+            }
+            function applyLut(lut, data, nData) {
+                for (var i = 0; i < nData; ++i) {
+                    data[i] = lut[data[i]];
+                }
+            }
+            function predictor(source) {
+                for (var t = 1; t < source.length; t++) {
+                    var d = source[t - 1] + source[t] - 128;
+                    source[t] = d;
+                }
+            }
+            function interleaveScalar(source, out) {
+                var t1 = 0;
+                var t2 = Math.floor((source.length + 1) / 2);
+                var s = 0;
+                var stop = source.length - 1;
+                while (true) {
+                    if (s > stop)
+                        break;
+                    out[s++] = source[t1++];
+                    if (s > stop)
+                        break;
+                    out[s++] = source[t2++];
+                }
+            }
+            function decodeRunLength(source) {
+                var size = source.byteLength;
+                var out = new Array();
+                var p = 0;
+                var reader = new DataView(source);
+                while (size > 0) {
+                    var l = reader.getInt8(p++);
+                    if (l < 0) {
+                        var count = -l;
+                        size -= count + 1;
+                        for (var i = 0; i < count; i++) {
+                            out.push(reader.getUint8(p++));
+                        }
+                    } else {
+                        var count = l;
+                        size -= 2;
+                        var value = reader.getUint8(p++);
+                        for (var i = 0; i < count + 1; i++) {
+                            out.push(value);
+                        }
+                    }
+                }
+                return out;
+            }
+            function lossyDctDecode(cscSet, rowPtrs, channelData, acBuffer, dcBuffer, outBuffer) {
+                var dataView = new DataView(outBuffer.buffer);
+                var width = channelData[cscSet.idx[0]].width;
+                var height = channelData[cscSet.idx[0]].height;
+                var numComp = 3;
+                var numFullBlocksX = Math.floor(width / 8);
+                var numBlocksX = Math.ceil(width / 8);
+                var numBlocksY = Math.ceil(height / 8);
+                var leftoverX = width - (numBlocksX - 1) * 8;
+                var leftoverY = height - (numBlocksY - 1) * 8;
+                var currAcComp = { value: 0 };
+                var currDcComp = new Array(numComp);
+                var dctData = new Array(numComp);
+                var halfZigBlock = new Array(numComp);
+                var rowBlock = new Array(numComp);
+                var rowOffsets = new Array(numComp);
+                for (let comp = 0; comp < numComp; ++comp) {
+                    rowOffsets[comp] = rowPtrs[cscSet.idx[comp]];
+                    currDcComp[comp] = comp < 1 ? 0 : currDcComp[comp - 1] + numBlocksX * numBlocksY;
+                    dctData[comp] = new Float32Array(64);
+                    halfZigBlock[comp] = new Uint16Array(64);
+                    rowBlock[comp] = new Uint16Array(numBlocksX * 64);
+                }
+                for (let blocky = 0; blocky < numBlocksY; ++blocky) {
+                    var maxY = 8;
+                    if (blocky == numBlocksY - 1)
+                        maxY = leftoverY;
+                    var maxX = 8;
+                    for (let blockx = 0; blockx < numBlocksX; ++blockx) {
+                        if (blockx == numBlocksX - 1)
+                            maxX = leftoverX;
+                        for (let comp = 0; comp < numComp; ++comp) {
+                            halfZigBlock[comp].fill(0);
+                            halfZigBlock[comp][0] = dcBuffer[currDcComp[comp]++];
+                            unRleAC(currAcComp, acBuffer, halfZigBlock[comp]);
+                            unZigZag(halfZigBlock[comp], dctData[comp]);
+                            dctInverse(dctData[comp]);
+                        }
+                        if (numComp == 3) {
+                            csc709Inverse(dctData);
+                        }
+                        for (let comp = 0; comp < numComp; ++comp) {
+                            convertToHalf(dctData[comp], rowBlock[comp], blockx * 64);
+                        }
+                    }
+                    let offset = 0;
+                    for (let comp = 0; comp < numComp; ++comp) {
+                        let type = channelData[cscSet.idx[comp]].type;
+                        for (let y = 8 * blocky; y < 8 * blocky + maxY; ++y) {
+                            offset = rowOffsets[comp][y];
+                            for (let blockx = 0; blockx < numFullBlocksX; ++blockx) {
+                                let src = blockx * 64 + (y & 7) * 8;
+                                dataView.setUint16(offset + 0 * INT16_SIZE * type, rowBlock[comp][src + 0], true);
+                                dataView.setUint16(offset + 1 * INT16_SIZE * type, rowBlock[comp][src + 1], true);
+                                dataView.setUint16(offset + 2 * INT16_SIZE * type, rowBlock[comp][src + 2], true);
+                                dataView.setUint16(offset + 3 * INT16_SIZE * type, rowBlock[comp][src + 3], true);
+                                dataView.setUint16(offset + 4 * INT16_SIZE * type, rowBlock[comp][src + 4], true);
+                                dataView.setUint16(offset + 5 * INT16_SIZE * type, rowBlock[comp][src + 5], true);
+                                dataView.setUint16(offset + 6 * INT16_SIZE * type, rowBlock[comp][src + 6], true);
+                                dataView.setUint16(offset + 7 * INT16_SIZE * type, rowBlock[comp][src + 7], true);
+                                offset += 8 * INT16_SIZE * type;
+                            }
+                        }
+                        if (numFullBlocksX != numBlocksX) {
+                            for (let y = 8 * blocky; y < 8 * blocky + maxY; ++y) {
+                                let offset = rowOffsets[comp][y] + 8 * numFullBlocksX * INT16_SIZE * type;
+                                let src = numFullBlocksX * 64 + (y & 7) * 8;
+                                for (let x = 0; x < maxX; ++x) {
+                                    dataView.setUint16(offset + x * INT16_SIZE * type, rowBlock[comp][src + x], true);
+                                }
+                            }
+                        }
+                    }
+                }
+                var halfRow = new Uint16Array(width);
+                var dataView = new DataView(outBuffer.buffer);
+                for (var comp = 0; comp < numComp; ++comp) {
+                    channelData[cscSet.idx[comp]].decoded = true;
+                    var type = channelData[cscSet.idx[comp]].type;
+                    if (channelData[comp].type != 2)
+                        continue;
+                    for (var y = 0; y < height; ++y) {
+                        let offset = rowOffsets[comp][y];
+                        for (var x = 0; x < width; ++x) {
+                            halfRow[x] = dataView.getUint16(offset + x * INT16_SIZE * type, true);
+                        }
+                        for (var x = 0; x < width; ++x) {
+                            dataView.setFloat32(offset + x * INT16_SIZE * type, decodeFloat16(halfRow[x]), true);
+                        }
+                    }
+                }
+            }
+            function unRleAC(currAcComp, acBuffer, halfZigBlock) {
+                var acValue;
+                var dctComp = 1;
+                while (dctComp < 64) {
+                    acValue = acBuffer[currAcComp.value];
+                    if (acValue == 65280) {
+                        dctComp = 64;
+                    } else if (acValue >> 8 == 255) {
+                        dctComp += acValue & 255;
+                    } else {
+                        halfZigBlock[dctComp] = acValue;
+                        dctComp++;
+                    }
+                    currAcComp.value++;
+                }
+            }
+            function unZigZag(src, dst) {
+                dst[0] = decodeFloat16(src[0]);
+                dst[1] = decodeFloat16(src[1]);
+                dst[2] = decodeFloat16(src[5]);
+                dst[3] = decodeFloat16(src[6]);
+                dst[4] = decodeFloat16(src[14]);
+                dst[5] = decodeFloat16(src[15]);
+                dst[6] = decodeFloat16(src[27]);
+                dst[7] = decodeFloat16(src[28]);
+                dst[8] = decodeFloat16(src[2]);
+                dst[9] = decodeFloat16(src[4]);
+                dst[10] = decodeFloat16(src[7]);
+                dst[11] = decodeFloat16(src[13]);
+                dst[12] = decodeFloat16(src[16]);
+                dst[13] = decodeFloat16(src[26]);
+                dst[14] = decodeFloat16(src[29]);
+                dst[15] = decodeFloat16(src[42]);
+                dst[16] = decodeFloat16(src[3]);
+                dst[17] = decodeFloat16(src[8]);
+                dst[18] = decodeFloat16(src[12]);
+                dst[19] = decodeFloat16(src[17]);
+                dst[20] = decodeFloat16(src[25]);
+                dst[21] = decodeFloat16(src[30]);
+                dst[22] = decodeFloat16(src[41]);
+                dst[23] = decodeFloat16(src[43]);
+                dst[24] = decodeFloat16(src[9]);
+                dst[25] = decodeFloat16(src[11]);
+                dst[26] = decodeFloat16(src[18]);
+                dst[27] = decodeFloat16(src[24]);
+                dst[28] = decodeFloat16(src[31]);
+                dst[29] = decodeFloat16(src[40]);
+                dst[30] = decodeFloat16(src[44]);
+                dst[31] = decodeFloat16(src[53]);
+                dst[32] = decodeFloat16(src[10]);
+                dst[33] = decodeFloat16(src[19]);
+                dst[34] = decodeFloat16(src[23]);
+                dst[35] = decodeFloat16(src[32]);
+                dst[36] = decodeFloat16(src[39]);
+                dst[37] = decodeFloat16(src[45]);
+                dst[38] = decodeFloat16(src[52]);
+                dst[39] = decodeFloat16(src[54]);
+                dst[40] = decodeFloat16(src[20]);
+                dst[41] = decodeFloat16(src[22]);
+                dst[42] = decodeFloat16(src[33]);
+                dst[43] = decodeFloat16(src[38]);
+                dst[44] = decodeFloat16(src[46]);
+                dst[45] = decodeFloat16(src[51]);
+                dst[46] = decodeFloat16(src[55]);
+                dst[47] = decodeFloat16(src[60]);
+                dst[48] = decodeFloat16(src[21]);
+                dst[49] = decodeFloat16(src[34]);
+                dst[50] = decodeFloat16(src[37]);
+                dst[51] = decodeFloat16(src[47]);
+                dst[52] = decodeFloat16(src[50]);
+                dst[53] = decodeFloat16(src[56]);
+                dst[54] = decodeFloat16(src[59]);
+                dst[55] = decodeFloat16(src[61]);
+                dst[56] = decodeFloat16(src[35]);
+                dst[57] = decodeFloat16(src[36]);
+                dst[58] = decodeFloat16(src[48]);
+                dst[59] = decodeFloat16(src[49]);
+                dst[60] = decodeFloat16(src[57]);
+                dst[61] = decodeFloat16(src[58]);
+                dst[62] = decodeFloat16(src[62]);
+                dst[63] = decodeFloat16(src[63]);
+            }
+            function dctInverse(data) {
+                const a = 0.5 * Math.cos(3.14159 / 4);
+                const b = 0.5 * Math.cos(3.14159 / 16);
+                const c = 0.5 * Math.cos(3.14159 / 8);
+                const d = 0.5 * Math.cos(3 * 3.14159 / 16);
+                const e = 0.5 * Math.cos(5 * 3.14159 / 16);
+                const f = 0.5 * Math.cos(3 * 3.14159 / 8);
+                const g = 0.5 * Math.cos(7 * 3.14159 / 16);
+                var alpha = new Array(4);
+                var beta = new Array(4);
+                var theta = new Array(4);
+                var gamma = new Array(4);
+                for (var row = 0; row < 8; ++row) {
+                    var rowPtr = row * 8;
+                    alpha[0] = c * data[rowPtr + 2];
+                    alpha[1] = f * data[rowPtr + 2];
+                    alpha[2] = c * data[rowPtr + 6];
+                    alpha[3] = f * data[rowPtr + 6];
+                    beta[0] = b * data[rowPtr + 1] + d * data[rowPtr + 3] + e * data[rowPtr + 5] + g * data[rowPtr + 7];
+                    beta[1] = d * data[rowPtr + 1] - g * data[rowPtr + 3] - b * data[rowPtr + 5] - e * data[rowPtr + 7];
+                    beta[2] = e * data[rowPtr + 1] - b * data[rowPtr + 3] + g * data[rowPtr + 5] + d * data[rowPtr + 7];
+                    beta[3] = g * data[rowPtr + 1] - e * data[rowPtr + 3] + d * data[rowPtr + 5] - b * data[rowPtr + 7];
+                    theta[0] = a * (data[rowPtr + 0] + data[rowPtr + 4]);
+                    theta[3] = a * (data[rowPtr + 0] - data[rowPtr + 4]);
+                    theta[1] = alpha[0] + alpha[3];
+                    theta[2] = alpha[1] - alpha[2];
+                    gamma[0] = theta[0] + theta[1];
+                    gamma[1] = theta[3] + theta[2];
+                    gamma[2] = theta[3] - theta[2];
+                    gamma[3] = theta[0] - theta[1];
+                    data[rowPtr + 0] = gamma[0] + beta[0];
+                    data[rowPtr + 1] = gamma[1] + beta[1];
+                    data[rowPtr + 2] = gamma[2] + beta[2];
+                    data[rowPtr + 3] = gamma[3] + beta[3];
+                    data[rowPtr + 4] = gamma[3] - beta[3];
+                    data[rowPtr + 5] = gamma[2] - beta[2];
+                    data[rowPtr + 6] = gamma[1] - beta[1];
+                    data[rowPtr + 7] = gamma[0] - beta[0];
+                }
+                for (var column = 0; column < 8; ++column) {
+                    alpha[0] = c * data[16 + column];
+                    alpha[1] = f * data[16 + column];
+                    alpha[2] = c * data[48 + column];
+                    alpha[3] = f * data[48 + column];
+                    beta[0] = b * data[8 + column] + d * data[24 + column] + e * data[40 + column] + g * data[56 + column];
+                    beta[1] = d * data[8 + column] - g * data[24 + column] - b * data[40 + column] - e * data[56 + column];
+                    beta[2] = e * data[8 + column] - b * data[24 + column] + g * data[40 + column] + d * data[56 + column];
+                    beta[3] = g * data[8 + column] - e * data[24 + column] + d * data[40 + column] - b * data[56 + column];
+                    theta[0] = a * (data[column] + data[32 + column]);
+                    theta[3] = a * (data[column] - data[32 + column]);
+                    theta[1] = alpha[0] + alpha[3];
+                    theta[2] = alpha[1] - alpha[2];
+                    gamma[0] = theta[0] + theta[1];
+                    gamma[1] = theta[3] + theta[2];
+                    gamma[2] = theta[3] - theta[2];
+                    gamma[3] = theta[0] - theta[1];
+                    data[0 + column] = gamma[0] + beta[0];
+                    data[8 + column] = gamma[1] + beta[1];
+                    data[16 + column] = gamma[2] + beta[2];
+                    data[24 + column] = gamma[3] + beta[3];
+                    data[32 + column] = gamma[3] - beta[3];
+                    data[40 + column] = gamma[2] - beta[2];
+                    data[48 + column] = gamma[1] - beta[1];
+                    data[56 + column] = gamma[0] - beta[0];
+                }
+            }
+            function csc709Inverse(data) {
+                for (var i = 0; i < 64; ++i) {
+                    var y = data[0][i];
+                    var cb = data[1][i];
+                    var cr = data[2][i];
+                    data[0][i] = y + 1.5747 * cr;
+                    data[1][i] = y - 0.1873 * cb - 0.4682 * cr;
+                    data[2][i] = y + 1.8556 * cb;
+                }
+            }
+            function convertToHalf(src, dst, idx) {
+                for (var i = 0; i < 64; ++i) {
+                    dst[idx + i] = encodeFloat16(toLinear(src[i]));
+                }
+            }
+            function toLinear(float) {
+                if (float <= 1) {
+                    return Math.sign(float) * Math.pow(Math.abs(float), 2.2);
+                } else {
+                    return Math.sign(float) * Math.pow(logBase, Math.abs(float) - 1);
+                }
+            }
+            function uncompressRAW(info) {
+                return new DataView(info.array.buffer, info.offset.value, info.size);
+            }
+            function uncompressRLE(info) {
+                var compressed = info.viewer.buffer.slice(info.offset.value, info.offset.value + info.size);
+                var rawBuffer = new Uint8Array(decodeRunLength(compressed));
+                var tmpBuffer = new Uint8Array(rawBuffer.length);
+                predictor(rawBuffer);
+                interleaveScalar(rawBuffer, tmpBuffer);
+                return new DataView(tmpBuffer.buffer);
+            }
+            function uncompressZIP(info) {
+                var compressed = info.array.slice(info.offset.value, info.offset.value + info.size);
+                //if (typeof b.Zlib === 'undefined') {
+                //    console.error('THREE.EXRLoader: External library Inflate.min.js required, obtain or import from https://github.com/imaya/zlib');
+                //}
+                var inflate = new Inflate(compressed, {
+                    resize: true,
+                    verify: true
+                });
+                var rawBuffer = new Uint8Array(inflate.decompress().buffer);
+                var tmpBuffer = new Uint8Array(rawBuffer.length);
+                predictor(rawBuffer);
+                interleaveScalar(rawBuffer, tmpBuffer);
+                return new DataView(tmpBuffer.buffer);
+            }
+            function uncompressPIZ(info) {
+                var inDataView = info.viewer;
+                var inOffset = { value: info.offset.value };
+                var tmpBufSize = info.width * scanlineBlockSize * (EXRHeader.channels.length * info.type);
+                var outBuffer = new Uint16Array(tmpBufSize);
+                var bitmap = new Uint8Array(BITMAP_SIZE);
+                var outBufferEnd = 0;
+                var pizChannelData = new Array(info.channels);
+                for (var i = 0; i < info.channels; i++) {
+                    pizChannelData[i] = {};
+                    pizChannelData[i]['start'] = outBufferEnd;
+                    pizChannelData[i]['end'] = pizChannelData[i]['start'];
+                    pizChannelData[i]['nx'] = info.width;
+                    pizChannelData[i]['ny'] = info.lines;
+                    pizChannelData[i]['size'] = info.type;
+                    outBufferEnd += pizChannelData[i].nx * pizChannelData[i].ny * pizChannelData[i].size;
+                }
+                var minNonZero = parseUint16(inDataView, inOffset);
+                var maxNonZero = parseUint16(inDataView, inOffset);
+                if (maxNonZero >= BITMAP_SIZE) {
+                    throw 'Something is wrong with PIZ_COMPRESSION BITMAP_SIZE';
+                }
+                if (minNonZero <= maxNonZero) {
+                    for (var i = 0; i < maxNonZero - minNonZero + 1; i++) {
+                        bitmap[i + minNonZero] = parseUint8(inDataView, inOffset);
+                    }
+                }
+                var lut = new Uint16Array(USHORT_RANGE);
+                reverseLutFromBitmap(bitmap, lut);
+                var length = parseUint32(inDataView, inOffset);
+                hufUncompress(info.array, inDataView, inOffset, length, outBuffer, outBufferEnd);
+                for (var i = 0; i < info.channels; ++i) {
+                    var cd = pizChannelData[i];
+                    for (var j = 0; j < pizChannelData[i].size; ++j) {
+                        wav2Decode(outBuffer, cd.start + j, cd.nx, cd.size, cd.ny, cd.nx * cd.size);
+                    }
+                }
+                applyLut(lut, outBuffer, outBufferEnd);
+                var tmpOffset = 0;
+                var tmpBuffer = new Uint8Array(outBuffer.buffer.byteLength);
+                for (var y = 0; y < info.lines; y++) {
+                    for (var c = 0; c < info.channels; c++) {
+                        var cd = pizChannelData[c];
+                        var n = cd.nx * cd.size;
+                        var cp = new Uint8Array(outBuffer.buffer, cd.end * INT16_SIZE, n * INT16_SIZE);
+                        tmpBuffer.set(cp, tmpOffset);
+                        tmpOffset += n * INT16_SIZE;
+                        cd.end += n;
+                    }
+                }
+                return new DataView(tmpBuffer.buffer);
+            }
+            function uncompressDWA(info) {
+                var inDataView = info.viewer;
+                var inOffset = { value: info.offset.value };
+                var outBuffer = new Uint8Array(info.width * info.lines * (EXRHeader.channels.length * info.type * INT16_SIZE));
+                var dwaHeader = {
+                    version: parseInt64(inDataView, inOffset),
+                    unknownUncompressedSize: parseInt64(inDataView, inOffset),
+                    unknownCompressedSize: parseInt64(inDataView, inOffset),
+                    acCompressedSize: parseInt64(inDataView, inOffset),
+                    dcCompressedSize: parseInt64(inDataView, inOffset),
+                    rleCompressedSize: parseInt64(inDataView, inOffset),
+                    rleUncompressedSize: parseInt64(inDataView, inOffset),
+                    rleRawSize: parseInt64(inDataView, inOffset),
+                    totalAcUncompressedCount: parseInt64(inDataView, inOffset),
+                    totalDcUncompressedCount: parseInt64(inDataView, inOffset),
+                    acCompression: parseInt64(inDataView, inOffset)
+                };
+                if (dwaHeader.version < 2)
+                    throw 'EXRLoader.parse: ' + EXRHeader.compression + ' version ' + dwaHeader.version + ' is unsupported';
+                var channelRules = new Array();
+                var ruleSize = parseUint16(inDataView, inOffset) - INT16_SIZE;
+                while (ruleSize > 0) {
+                    var name = parseNullTerminatedString(inDataView.buffer, inOffset);
+                    var value = parseUint8(inDataView, inOffset);
+                    var compression = value >> 2 & 3;
+                    var csc = (value >> 4) - 1;
+                    var index = new Int8Array([csc])[0];
+                    var type = parseUint8(inDataView, inOffset);
+                    channelRules.push({
+                        name: name,
+                        index: index,
+                        type: type,
+                        compression: compression
+                    });
+                    ruleSize -= name.length + 3;
+                }
+                var channels = EXRHeader.channels;
+                var channelData = new Array(info.channels);
+                for (var i = 0; i < info.channels; ++i) {
+                    var cd = channelData[i] = {};
+                    var channel = channels[i];
+                    cd.name = channel.name;
+                    cd.compression = UNKNOWN;
+                    cd.decoded = false;
+                    cd.type = channel.pixelType;
+                    cd.pLinear = channel.pLinear;
+                    cd.width = info.width;
+                    cd.height = info.lines;
+                }
+                var cscSet = { idx: new Array(3) };
+                for (var offset = 0; offset < info.channels; ++offset) {
+                    var cd = channelData[offset];
+                    for (var i = 0; i < channelRules.length; ++i) {
+                        var rule = channelRules[i];
+                        if (cd.name == rule.name) {
+                            cd.compression = rule.compression;
+                            if (rule.index >= 0) {
+                                cscSet.idx[rule.index] = offset;
+                            }
+                            cd.offset = offset;
+                        }
+                    }
+                }
+                if (dwaHeader.acCompressedSize > 0) {
+                    switch (dwaHeader.acCompression) {
+                    case STATIC_HUFFMAN:
+                        var acBuffer = new Uint16Array(dwaHeader.totalAcUncompressedCount);
+                        hufUncompress(info.array, inDataView, inOffset, dwaHeader.acCompressedSize, acBuffer, dwaHeader.totalAcUncompressedCount);
+                        break;
+                    case DEFLATE:
+                        var compressed = info.array.slice(inOffset.value, inOffset.value + dwaHeader.totalAcUncompressedCount);
+                        var inflate = new Inflate(compressed, {
+                            resize: true,
+                            verify: true
+                        });
+                        var acBuffer = new Uint16Array(inflate.decompress().buffer);
+                        inOffset.value += dwaHeader.totalAcUncompressedCount;
+                        break;
+                    }
+                }
+                if (dwaHeader.dcCompressedSize > 0) {
+                    var zlibInfo = {
+                        array: info.array,
+                        offset: inOffset,
+                        size: dwaHeader.dcCompressedSize
+                    };
+                    var dcBuffer = new Uint16Array(uncompressZIP(zlibInfo).buffer);
+                    inOffset.value += dwaHeader.dcCompressedSize;
+                }
+                if (dwaHeader.rleRawSize > 0) {
+                    var compressed = info.array.slice(inOffset.value, inOffset.value + dwaHeader.rleCompressedSize);
+                    var inflate = new Inflate(compressed, {
+                        resize: true,
+                        verify: true
+                    });
+                    var rleBuffer = decodeRunLength(inflate.decompress().buffer);
+                    inOffset.value += dwaHeader.rleCompressedSize;
+                }
+                var outBufferEnd = 0;
+                var rowOffsets = new Array(channelData.length);
+                for (var i = 0; i < rowOffsets.length; ++i) {
+                    rowOffsets[i] = new Array();
+                }
+                for (var y = 0; y < info.lines; ++y) {
+                    for (var chan = 0; chan < channelData.length; ++chan) {
+                        rowOffsets[chan].push(outBufferEnd);
+                        outBufferEnd += channelData[chan].width * info.type * INT16_SIZE;
+                    }
+                }
+                lossyDctDecode(cscSet, rowOffsets, channelData, acBuffer, dcBuffer, outBuffer);
+                for (var i = 0; i < channelData.length; ++i) {
+                    var cd = channelData[i];
+                    if (cd.decoded)
+                        continue;
+                    switch (cd.compression) {
+                    case RLE:
+                        var row = 0;
+                        var rleOffset = 0;
+                        for (var y = 0; y < info.lines; ++y) {
+                            var rowOffsetBytes = rowOffsets[i][row];
+                            for (var x = 0; x < cd.width; ++x) {
+                                for (var byte = 0; byte < INT16_SIZE * cd.type; ++byte) {
+                                    outBuffer[rowOffsetBytes++] = rleBuffer[rleOffset + byte * cd.width * cd.height];
+                                }
+                                rleOffset++;
+                            }
+                            row++;
+                        }
+                        break;
+                    case LOSSY_DCT:
+                    default:
+                        throw 'EXRLoader.parse: unsupported channel compression';
+                    }
+                }
+                return new DataView(outBuffer.buffer);
+            }
+            function parseNullTerminatedString(buffer, offset) {
+                var uintBuffer = new Uint8Array(buffer);
+                var endOffset = 0;
+                while (uintBuffer[offset.value + endOffset] != 0) {
+                    endOffset += 1;
+                }
+                var stringValue = new TextDecoder().decode(uintBuffer.slice(offset.value, offset.value + endOffset));
+                offset.value = offset.value + endOffset + 1;
+                return stringValue;
+            }
+            function parseFixedLengthString(buffer, offset, size) {
+                var stringValue = new TextDecoder().decode(new Uint8Array(buffer).slice(offset.value, offset.value + size));
+                offset.value = offset.value + size;
+                return stringValue;
+            }
+            function parseUlong(dataView, offset) {
+                var uLong = dataView.getUint32(0, true);
+                offset.value = offset.value + ULONG_SIZE;
+                return uLong;
+            }
+            function parseUint32(dataView, offset) {
+                var Uint32 = dataView.getUint32(offset.value, true);
+                offset.value = offset.value + INT32_SIZE;
+                return Uint32;
+            }
+            function parseUint8Array(uInt8Array, offset) {
+                var Uint8 = uInt8Array[offset.value];
+                offset.value = offset.value + INT8_SIZE;
+                return Uint8;
+            }
+            function parseUint8(dataView, offset) {
+                var Uint8 = dataView.getUint8(offset.value);
+                offset.value = offset.value + INT8_SIZE;
+                return Uint8;
+            }
+            function parseInt64(dataView, offset) {
+                var int = Number(dataView.getBigInt64(offset.value, true));
+                offset.value += ULONG_SIZE;
+                return int;
+            }
+            function parseFloat32(dataView, offset) {
+                var float = dataView.getFloat32(offset.value, true);
+                offset.value += FLOAT32_SIZE;
+                return float;
+            }
+            function decodeFloat16(binary) {
+                var exponent = (binary & 31744) >> 10, fraction = binary & 1023;
+                return (binary >> 15 ? -1 : 1) * (exponent ? exponent === 31 ? fraction ? NaN : Infinity : Math.pow(2, exponent - 15) * (1 + fraction / 1024) : 0.00006103515625 * (fraction / 1024));
+            }
+            var encodeFloat16 = function () {
+                var floatView = new Float32Array(1);
+                var int32View = new Int32Array(floatView.buffer);
+                return function toHalf(val) {
+                    floatView[0] = val;
+                    var x = int32View[0];
+                    var bits = x >> 16 & 32768;
+                    var m = x >> 12 & 2047;
+                    var e = x >> 23 & 255;
+                    if (e < 103)
+                        return bits;
+                    if (e > 142) {
+                        bits |= 31744;
+                        bits |= (e == 255 ? 0 : 1) && x & 8388607;
+                        return bits;
+                    }
+                    if (e < 113) {
+                        m |= 2048;
+                        bits |= (m >> 114 - e) + (m >> 113 - e & 1);
+                        return bits;
+                    }
+                    bits |= e - 112 << 10 | m >> 1;
+                    bits += m & 1;
+                    return bits;
+                };
+            }();
+            function parseUint16(dataView, offset) {
+                var Uint16 = dataView.getUint16(offset.value, true);
+                offset.value += INT16_SIZE;
+                return Uint16;
+            }
+            function parseFloat16(buffer, offset) {
+                return decodeFloat16(parseUint16(buffer, offset));
+            }
+            function parseChlist(dataView, buffer, offset, size) {
+                var startOffset = offset.value;
+                var channels = [];
+                while (offset.value < startOffset + size - 1) {
+                    var name = parseNullTerminatedString(buffer, offset);
+                    var pixelType = parseUint32(dataView, offset);
+                    var pLinear = parseUint8(dataView, offset);
+                    offset.value += 3;
+                    var xSampling = parseUint32(dataView, offset);
+                    var ySampling = parseUint32(dataView, offset);
+                    channels.push({
+                        name: name,
+                        pixelType: pixelType,
+                        pLinear: pLinear,
+                        xSampling: xSampling,
+                        ySampling: ySampling
+                    });
+                }
+                offset.value += 1;
+                return channels;
+            }
+            function parseChromaticities(dataView, offset) {
+                var redX = parseFloat32(dataView, offset);
+                var redY = parseFloat32(dataView, offset);
+                var greenX = parseFloat32(dataView, offset);
+                var greenY = parseFloat32(dataView, offset);
+                var blueX = parseFloat32(dataView, offset);
+                var blueY = parseFloat32(dataView, offset);
+                var whiteX = parseFloat32(dataView, offset);
+                var whiteY = parseFloat32(dataView, offset);
+                return {
+                    redX: redX,
+                    redY: redY,
+                    greenX: greenX,
+                    greenY: greenY,
+                    blueX: blueX,
+                    blueY: blueY,
+                    whiteX: whiteX,
+                    whiteY: whiteY
+                };
+            }
+            function parseCompression(dataView, offset) {
+                var compressionCodes = [
+                    'NO_COMPRESSION',
+                    'RLE_COMPRESSION',
+                    'ZIPS_COMPRESSION',
+                    'ZIP_COMPRESSION',
+                    'PIZ_COMPRESSION',
+                    'PXR24_COMPRESSION',
+                    'B44_COMPRESSION',
+                    'B44A_COMPRESSION',
+                    'DWAA_COMPRESSION',
+                    'DWAB_COMPRESSION'
+                ];
+                var compression = parseUint8(dataView, offset);
+                return compressionCodes[compression];
+            }
+            function parseBox2i(dataView, offset) {
+                var xMin = parseUint32(dataView, offset);
+                var yMin = parseUint32(dataView, offset);
+                var xMax = parseUint32(dataView, offset);
+                var yMax = parseUint32(dataView, offset);
+                return {
+                    xMin: xMin,
+                    yMin: yMin,
+                    xMax: xMax,
+                    yMax: yMax
+                };
+            }
+            function parseLineOrder(dataView, offset) {
+                var lineOrders = ['INCREASING_Y'];
+                var lineOrder = parseUint8(dataView, offset);
+                return lineOrders[lineOrder];
+            }
+            function parseV2f(dataView, offset) {
+                var x = parseFloat32(dataView, offset);
+                var y = parseFloat32(dataView, offset);
+                return [
+                    x,
+                    y
+                ];
+            }
+            function parseValue(dataView, buffer, offset, type, size) {
+                if (type === 'string' || type === 'stringvector' || type === 'iccProfile') {
+                    return parseFixedLengthString(buffer, offset, size);
+                } else if (type === 'chlist') {
+                    return parseChlist(dataView, buffer, offset, size);
+                } else if (type === 'chromaticities') {
+                    return parseChromaticities(dataView, offset);
+                } else if (type === 'compression') {
+                    return parseCompression(dataView, offset);
+                } else if (type === 'box2i') {
+                    return parseBox2i(dataView, offset);
+                } else if (type === 'lineOrder') {
+                    return parseLineOrder(dataView, offset);
+                } else if (type === 'float') {
+                    return parseFloat32(dataView, offset);
+                } else if (type === 'v2f') {
+                    return parseV2f(dataView, offset);
+                } else if (type === 'int') {
+                    return parseUint32(dataView, offset);
+                } else {
+                    throw 'Cannot parse value for unsupported type: ' + type;
+                }
+            }
+            var bufferDataView = new DataView(buffer);
+            var uInt8Array = new Uint8Array(buffer);
+            var EXRHeader = {};
+            bufferDataView.getUint32(0, true);
+            bufferDataView.getUint8(4, true);
+            bufferDataView.getUint8(5, true);
+            var offset = { value: 8 };
+            var keepReading = true;
+            while (keepReading) {
+                var attributeName = parseNullTerminatedString(buffer, offset);
+                if (attributeName == 0) {
+                    keepReading = false;
+                } else {
+                    var attributeType = parseNullTerminatedString(buffer, offset);
+                    var attributeSize = parseUint32(bufferDataView, offset);
+                    var attributeValue = parseValue(bufferDataView, buffer, offset, attributeType, attributeSize);
+                    EXRHeader[attributeName] = attributeValue;
+                }
+            }
+            var dataWindowHeight = EXRHeader.dataWindow.yMax + 1;
+            var uncompress;
+            var scanlineBlockSize;
+            switch (EXRHeader.compression) {
+            case 'NO_COMPRESSION':
+                scanlineBlockSize = 1;
+                uncompress = uncompressRAW;
+                break;
+            case 'RLE_COMPRESSION':
+                scanlineBlockSize = 1;
+                uncompress = uncompressRLE;
+                break;
+            case 'ZIPS_COMPRESSION':
+                scanlineBlockSize = 1;
+                uncompress = uncompressZIP;
+                break;
+            case 'ZIP_COMPRESSION':
+                scanlineBlockSize = 16;
+                uncompress = uncompressZIP;
+                break;
+            case 'PIZ_COMPRESSION':
+                scanlineBlockSize = 32;
+                uncompress = uncompressPIZ;
+                break;
+            case 'DWAA_COMPRESSION':
+                scanlineBlockSize = 32;
+                uncompress = uncompressDWA;
+                break;
+            case 'DWAB_COMPRESSION':
+                scanlineBlockSize = 256;
+                uncompress = uncompressDWA;
+                break;
+            default:
+                throw 'EXRLoader.parse: ' + EXRHeader.compression + ' is unsupported';
+            }
+            var size_t;
+            var getValue;
+            var pixelType = EXRHeader.channels[0].pixelType;
+            if (pixelType === 1) {
+                switch (this.type) {
+                case THREE.FloatType:
+                    getValue = parseFloat16;
+                    size_t = INT16_SIZE;
+                    break;
+                case THREE.HalfFloatType:
+                    getValue = parseUint16;
+                    size_t = INT16_SIZE;
+                    break;
+                }
+            } else if (pixelType === 2) {
+                switch (this.type) {
+                case THREE.FloatType:
+                    getValue = parseFloat32;
+                    size_t = FLOAT32_SIZE;
+                    break;
+                case THREE.HalfFloatType:
+                    throw 'EXRLoader.parse: unsupported HalfFloatType texture for FloatType image file.';
+                }
+            } else {
+                throw 'EXRLoader.parse: unsupported pixelType ' + pixelType + ' for ' + EXRHeader.compression + '.';
+            }
+            var numBlocks = dataWindowHeight / scanlineBlockSize;
+            for (var i = 0; i < numBlocks; i++) {
+                parseUlong(bufferDataView, offset);
+            }
+            var width = EXRHeader.dataWindow.xMax - EXRHeader.dataWindow.xMin + 1;
+            var height = EXRHeader.dataWindow.yMax - EXRHeader.dataWindow.yMin + 1;
+            var numChannels = 4;
+            var size = width * height * numChannels;
+            switch (this.type) {
+            case THREE.FloatType:
+                var byteArray = new Float32Array(size);
+                if (EXRHeader.channels.length < numChannels) {
+                    byteArray.fill(1, 0, size);
+                }
+                break;
+            case THREE.HalfFloatType:
+                var byteArray = new Uint16Array(size);
+                if (EXRHeader.channels.length < numChannels) {
+                    byteArray.fill(15360, 0, size);
+                }
+                break;
+            default:
+                console.error('THREE.EXRLoader: unsupported type: ', this.type);
+                break;
+            }
+            var channelOffsets = {
+                R: 0,
+                G: 1,
+                B: 2,
+                A: 3
+            };
+            var compressionInfo = {
+                size: 0,
+                width: width,
+                lines: scanlineBlockSize,
+                offset: offset,
+                array: uInt8Array,
+                viewer: bufferDataView,
+                type: pixelType,
+                channels: EXRHeader.channels.length
+            };
+            var line;
+            var size;
+            var viewer;
+            var tmpOffset = { value: 0 };
+            for (var scanlineBlockIdx = 0; scanlineBlockIdx < height / scanlineBlockSize; scanlineBlockIdx++) {
+                line = parseUint32(bufferDataView, offset);
+                size = parseUint32(bufferDataView, offset);
+                compressionInfo.lines = line + scanlineBlockSize > height ? height - line : scanlineBlockSize;
+                compressionInfo.offset = offset;
+                compressionInfo.size = size;
+                viewer = uncompress(compressionInfo);
+                offset.value += size;
+                for (var line_y = 0; line_y < scanlineBlockSize; line_y++) {
+                    var true_y = line_y + scanlineBlockIdx * scanlineBlockSize;
+                    if (true_y >= height)
+                        break;
+                    for (var channelID = 0; channelID < EXRHeader.channels.length; channelID++) {
+                        var cOff = channelOffsets[EXRHeader.channels[channelID].name];
+                        for (var x = 0; x < width; x++) {
+                            var idx = line_y * (EXRHeader.channels.length * width) + channelID * width + x;
+                            tmpOffset.value = idx * size_t;
+                            var val = getValue(viewer, tmpOffset);
+                            byteArray[(height - 1 - true_y) * (width * numChannels) + x * numChannels + cOff] = val;
+                        }
+                    }
+                }
+            }
+            return {
+                header: EXRHeader,
+                width: width,
+                height: height,
+                data: byteArray,
+                format: numChannels === 4 ? THREE.RGBAFormat : THREE.RGBFormat,
+                type: this.type
+            };
+        },
+        setDataType: function (value) {
+            this.type = value;
+            return this;
+        },
+        load: function (url, onLoad, onProgress, onError) {
+            function onLoadCallback(texture, texData) {
+                switch (texture.type) {
+                case THREE.FloatType:
+                    texture.encoding = THREE.LinearEncoding;
+                    texture.minFilter = THREE.LinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.generateMipmaps = false;
+                    texture.flipY = false;
+                    break;
+                case THREE.HalfFloatType:
+                    texture.encoding = THREE.LinearEncoding;
+                    texture.minFilter = THREE.LinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.generateMipmaps = false;
+                    texture.flipY = false;
+                    break;
+                }
+                if (onLoad)
+                    onLoad(texture, texData);
+            }
+            return THREE.DataTextureLoader.prototype.load.call(this, url, onLoadCallback, onProgress, onError);
+        }
+    });
+
+    return threex.loaders.EXRLoader = EXRLoader;
 });
 define('skylark-threejs-ex/loaders/FBXLoader',[
     "skylark-threejs",
@@ -71721,6 +73574,5622 @@ define('skylark-threejs-ex/loaders/GLTFLoader',[
     
     return threex.loaders.GLTFLoader = GLTFLoader;
 });
+define('skylark-threejs-ex/loaders/RGBELoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var RGBELoader = function (manager) {
+        THREE.DataTextureLoader.call(this, manager);
+        this.type = THREE.UnsignedByteType;
+    };
+    RGBELoader.prototype = Object.assign(Object.create(THREE.DataTextureLoader.prototype), {
+        constructor: RGBELoader,
+        parse: function (buffer) {
+            var RGBE_RETURN_FAILURE = -1, rgbe_read_error = 1, rgbe_write_error = 2, rgbe_format_error = 3, rgbe_memory_error = 4, rgbe_error = function (rgbe_error_code, msg) {
+                    switch (rgbe_error_code) {
+                    case rgbe_read_error:
+                        console.error('RGBELoader Read Error: ' + (msg || ''));
+                        break;
+                    case rgbe_write_error:
+                        console.error('RGBELoader Write Error: ' + (msg || ''));
+                        break;
+                    case rgbe_format_error:
+                        console.error('RGBELoader Bad File Format: ' + (msg || ''));
+                        break;
+                    default:
+                    case rgbe_memory_error:
+                        console.error('RGBELoader: Error: ' + (msg || ''));
+                    }
+                    return RGBE_RETURN_FAILURE;
+                }, RGBE_VALID_PROGRAMTYPE = 1, RGBE_VALID_FORMAT = 2, RGBE_VALID_DIMENSIONS = 4, NEWLINE = '\n', fgets = function (buffer, lineLimit, consume) {
+                    lineLimit = !lineLimit ? 1024 : lineLimit;
+                    var p = buffer.pos, i = -1, len = 0, s = '', chunkSize = 128, chunk = String.fromCharCode.apply(null, new Uint16Array(buffer.subarray(p, p + chunkSize)));
+                    while (0 > (i = chunk.indexOf(NEWLINE)) && len < lineLimit && p < buffer.byteLength) {
+                        s += chunk;
+                        len += chunk.length;
+                        p += chunkSize;
+                        chunk += String.fromCharCode.apply(null, new Uint16Array(buffer.subarray(p, p + chunkSize)));
+                    }
+                    if (-1 < i) {
+                        if (false !== consume)
+                            buffer.pos += len + i + 1;
+                        return s + chunk.slice(0, i);
+                    }
+                    return false;
+                }, RGBE_ReadHeader = function (buffer) {
+                    var line, match, magic_token_re = /^#\?(\S+)$/, gamma_re = /^\s*GAMMA\s*=\s*(\d+(\.\d+)?)\s*$/, exposure_re = /^\s*EXPOSURE\s*=\s*(\d+(\.\d+)?)\s*$/, format_re = /^\s*FORMAT=(\S+)\s*$/, dimensions_re = /^\s*\-Y\s+(\d+)\s+\+X\s+(\d+)\s*$/, header = {
+                            valid: 0,
+                            string: '',
+                            comments: '',
+                            programtype: 'RGBE',
+                            format: '',
+                            gamma: 1,
+                            exposure: 1,
+                            width: 0,
+                            height: 0
+                        };
+                    if (buffer.pos >= buffer.byteLength || !(line = fgets(buffer))) {
+                        return rgbe_error(rgbe_read_error, 'no header found');
+                    }
+                    if (!(match = line.match(magic_token_re))) {
+                        return rgbe_error(rgbe_format_error, 'bad initial token');
+                    }
+                    header.valid |= RGBE_VALID_PROGRAMTYPE;
+                    header.programtype = match[1];
+                    header.string += line + '\n';
+                    while (true) {
+                        line = fgets(buffer);
+                        if (false === line)
+                            break;
+                        header.string += line + '\n';
+                        if ('#' === line.charAt(0)) {
+                            header.comments += line + '\n';
+                            continue;
+                        }
+                        if (match = line.match(gamma_re)) {
+                            header.gamma = parseFloat(match[1], 10);
+                        }
+                        if (match = line.match(exposure_re)) {
+                            header.exposure = parseFloat(match[1], 10);
+                        }
+                        if (match = line.match(format_re)) {
+                            header.valid |= RGBE_VALID_FORMAT;
+                            header.format = match[1];
+                        }
+                        if (match = line.match(dimensions_re)) {
+                            header.valid |= RGBE_VALID_DIMENSIONS;
+                            header.height = parseInt(match[1], 10);
+                            header.width = parseInt(match[2], 10);
+                        }
+                        if (header.valid & RGBE_VALID_FORMAT && header.valid & RGBE_VALID_DIMENSIONS)
+                            break;
+                    }
+                    if (!(header.valid & RGBE_VALID_FORMAT)) {
+                        return rgbe_error(rgbe_format_error, 'missing format specifier');
+                    }
+                    if (!(header.valid & RGBE_VALID_DIMENSIONS)) {
+                        return rgbe_error(rgbe_format_error, 'missing image size specifier');
+                    }
+                    return header;
+                }, RGBE_ReadPixels_RLE = function (buffer, w, h) {
+                    var data_rgba, offset, pos, count, byteValue, scanline_buffer, ptr, ptr_end, i, l, off, isEncodedRun, scanline_width = w, num_scanlines = h, rgbeStart;
+                    if (scanline_width < 8 || scanline_width > 32767 || (2 !== buffer[0] || 2 !== buffer[1] || buffer[2] & 128)) {
+                        return new Uint8Array(buffer);
+                    }
+                    if (scanline_width !== (buffer[2] << 8 | buffer[3])) {
+                        return rgbe_error(rgbe_format_error, 'wrong scanline width');
+                    }
+                    data_rgba = new Uint8Array(4 * w * h);
+                    if (!data_rgba || !data_rgba.length) {
+                        return rgbe_error(rgbe_memory_error, 'unable to allocate buffer space');
+                    }
+                    offset = 0;
+                    pos = 0;
+                    ptr_end = 4 * scanline_width;
+                    rgbeStart = new Uint8Array(4);
+                    scanline_buffer = new Uint8Array(ptr_end);
+                    while (num_scanlines > 0 && pos < buffer.byteLength) {
+                        if (pos + 4 > buffer.byteLength) {
+                            return rgbe_error(rgbe_read_error);
+                        }
+                        rgbeStart[0] = buffer[pos++];
+                        rgbeStart[1] = buffer[pos++];
+                        rgbeStart[2] = buffer[pos++];
+                        rgbeStart[3] = buffer[pos++];
+                        if (2 != rgbeStart[0] || 2 != rgbeStart[1] || (rgbeStart[2] << 8 | rgbeStart[3]) != scanline_width) {
+                            return rgbe_error(rgbe_format_error, 'bad rgbe scanline format');
+                        }
+                        ptr = 0;
+                        while (ptr < ptr_end && pos < buffer.byteLength) {
+                            count = buffer[pos++];
+                            isEncodedRun = count > 128;
+                            if (isEncodedRun)
+                                count -= 128;
+                            if (0 === count || ptr + count > ptr_end) {
+                                return rgbe_error(rgbe_format_error, 'bad scanline data');
+                            }
+                            if (isEncodedRun) {
+                                byteValue = buffer[pos++];
+                                for (i = 0; i < count; i++) {
+                                    scanline_buffer[ptr++] = byteValue;
+                                }
+                            } else {
+                                scanline_buffer.set(buffer.subarray(pos, pos + count), ptr);
+                                ptr += count;
+                                pos += count;
+                            }
+                        }
+                        l = scanline_width;
+                        for (i = 0; i < l; i++) {
+                            off = 0;
+                            data_rgba[offset] = scanline_buffer[i + off];
+                            off += scanline_width;
+                            data_rgba[offset + 1] = scanline_buffer[i + off];
+                            off += scanline_width;
+                            data_rgba[offset + 2] = scanline_buffer[i + off];
+                            off += scanline_width;
+                            data_rgba[offset + 3] = scanline_buffer[i + off];
+                            offset += 4;
+                        }
+                        num_scanlines--;
+                    }
+                    return data_rgba;
+                };
+            var RGBEByteToRGBFloat = function (sourceArray, sourceOffset, destArray, destOffset) {
+                var e = sourceArray[sourceOffset + 3];
+                var scale = Math.pow(2, e - 128) / 255;
+                destArray[destOffset + 0] = sourceArray[sourceOffset + 0] * scale;
+                destArray[destOffset + 1] = sourceArray[sourceOffset + 1] * scale;
+                destArray[destOffset + 2] = sourceArray[sourceOffset + 2] * scale;
+            };
+            var RGBEByteToRGBHalf = function () {
+                var floatView = new Float32Array(1);
+                var int32View = new Int32Array(floatView.buffer);
+                function toHalf(val) {
+                    floatView[0] = val;
+                    var x = int32View[0];
+                    var bits = x >> 16 & 32768;
+                    var m = x >> 12 & 2047;
+                    var e = x >> 23 & 255;
+                    if (e < 103)
+                        return bits;
+                    if (e > 142) {
+                        bits |= 31744;
+                        bits |= (e == 255 ? 0 : 1) && x & 8388607;
+                        return bits;
+                    }
+                    if (e < 113) {
+                        m |= 2048;
+                        bits |= (m >> 114 - e) + (m >> 113 - e & 1);
+                        return bits;
+                    }
+                    bits |= e - 112 << 10 | m >> 1;
+                    bits += m & 1;
+                    return bits;
+                }
+                return function (sourceArray, sourceOffset, destArray, destOffset) {
+                    var e = sourceArray[sourceOffset + 3];
+                    var scale = Math.pow(2, e - 128) / 255;
+                    destArray[destOffset + 0] = toHalf(sourceArray[sourceOffset + 0] * scale);
+                    destArray[destOffset + 1] = toHalf(sourceArray[sourceOffset + 1] * scale);
+                    destArray[destOffset + 2] = toHalf(sourceArray[sourceOffset + 2] * scale);
+                };
+            }();
+            var byteArray = new Uint8Array(buffer);
+            byteArray.pos = 0;
+            var rgbe_header_info = RGBE_ReadHeader(byteArray);
+            if (RGBE_RETURN_FAILURE !== rgbe_header_info) {
+                var w = rgbe_header_info.width, h = rgbe_header_info.height, image_rgba_data = RGBE_ReadPixels_RLE(byteArray.subarray(byteArray.pos), w, h);
+                if (RGBE_RETURN_FAILURE !== image_rgba_data) {
+                    switch (this.type) {
+                    case THREE.UnsignedByteType:
+                        var data = image_rgba_data;
+                        var format = THREE.RGBEFormat;
+                        var type = THREE.UnsignedByteType;
+                        break;
+                    case THREE.FloatType:
+                        var numElements = image_rgba_data.length / 4 * 3;
+                        var floatArray = new Float32Array(numElements);
+                        for (var j = 0; j < numElements; j++) {
+                            RGBEByteToRGBFloat(image_rgba_data, j * 4, floatArray, j * 3);
+                        }
+                        var data = floatArray;
+                        var format = THREE.RGBFormat;
+                        var type = THREE.FloatType;
+                        break;
+                    case THREE.HalfFloatType:
+                        var numElements = image_rgba_data.length / 4 * 3;
+                        var halfArray = new Uint16Array(numElements);
+                        for (var j = 0; j < numElements; j++) {
+                            RGBEByteToRGBHalf(image_rgba_data, j * 4, halfArray, j * 3);
+                        }
+                        var data = halfArray;
+                        var format = THREE.RGBFormat;
+                        var type = THREE.HalfFloatType;
+                        break;
+                    default:
+                        console.error('THREE.RGBELoader: unsupported type: ', this.type);
+                        break;
+                    }
+                    return {
+                        width: w,
+                        height: h,
+                        data: data,
+                        header: rgbe_header_info.string,
+                        gamma: rgbe_header_info.gamma,
+                        exposure: rgbe_header_info.exposure,
+                        format: format,
+                        type: type
+                    };
+                }
+            }
+            return null;
+        },
+        setDataType: function (value) {
+            this.type = value;
+            return this;
+        },
+        load: function (url, onLoad, onProgress, onError) {
+            function onLoadCallback(texture, texData) {
+                switch (texture.type) {
+                case THREE.UnsignedByteType:
+                    texture.encoding = THREE.RGBEEncoding;
+                    texture.minFilter = THREE.NearestFilter;
+                    texture.magFilter = THREE.NearestFilter;
+                    texture.generateMipmaps = false;
+                    texture.flipY = true;
+                    break;
+                case THREE.FloatType:
+                    texture.encoding = THREE.LinearEncoding;
+                    texture.minFilter = THREE.LinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.generateMipmaps = false;
+                    texture.flipY = true;
+                    break;
+                case THREE.HalfFloatType:
+                    texture.encoding = THREE.LinearEncoding;
+                    texture.minFilter = THREE.LinearFilter;
+                    texture.magFilter = THREE.LinearFilter;
+                    texture.generateMipmaps = false;
+                    texture.flipY = true;
+                    break;
+                }
+                if (onLoad)
+                    onLoad(texture, texData);
+            }
+            return THREE.DataTextureLoader.prototype.load.call(this, url, onLoadCallback, onProgress, onError);
+        }
+    });
+
+    return threex.loaders.RGBELoader = RGBELoader;
+});
+define('skylark-threejs-ex/loaders/HDRCubeTextureLoader',[
+    "skylark-threejs",
+    "../threex",
+    './RGBELoader'
+], function (
+    THREE, 
+    threex,
+    RGBELoader
+) {
+    'use strict';
+    var HDRCubeTextureLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+        this.hdrLoader = new RGBELoader();
+        this.type = THREE.UnsignedByteType;
+    };
+    HDRCubeTextureLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: HDRCubeTextureLoader,
+        load: function (urls, onLoad, onProgress, onError) {
+            if (!Array.isArray(urls)) {
+                console.warn('THREE.HDRCubeTextureLoader signature has changed. Use .setDataType() instead.');
+                this.setDataType(urls);
+                urls = onLoad;
+                onLoad = onProgress;
+                onProgress = onError;
+                onError = arguments[4];
+            }
+            var texture = new THREE.CubeTexture();
+            texture.type = this.type;
+            switch (texture.type) {
+            case THREE.UnsignedByteType:
+                texture.encoding = THREE.RGBEEncoding;
+                texture.format = THREE.RGBAFormat;
+                texture.minFilter = THREE.NearestFilter;
+                texture.magFilter = THREE.NearestFilter;
+                texture.generateMipmaps = false;
+                break;
+            case THREE.FloatType:
+                texture.encoding = THREE.LinearEncoding;
+                texture.format = THREE.RGBFormat;
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                break;
+            case THREE.HalfFloatType:
+                texture.encoding = THREE.LinearEncoding;
+                texture.format = THREE.RGBFormat;
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.generateMipmaps = false;
+                break;
+            }
+            var scope = this;
+            var loaded = 0;
+            function loadHDRData(i, onLoad, onProgress, onError) {
+                new THREE.FileLoader(scope.manager).setPath(scope.path).setResponseType('arraybuffer').load(urls[i], function (buffer) {
+                    loaded++;
+                    var texData = scope.hdrLoader.parse(buffer);
+                    if (!texData)
+                        return;
+                    if (texData.data !== undefined) {
+                        var dataTexture = new THREE.DataTexture(texData.data, texData.width, texData.height);
+                        dataTexture.type = texture.type;
+                        dataTexture.encoding = texture.encoding;
+                        dataTexture.format = texture.format;
+                        dataTexture.minFilter = texture.minFilter;
+                        dataTexture.magFilter = texture.magFilter;
+                        dataTexture.generateMipmaps = texture.generateMipmaps;
+                        texture.images[i] = dataTexture;
+                    }
+                    if (loaded === 6) {
+                        texture.needsUpdate = true;
+                        if (onLoad)
+                            onLoad(texture);
+                    }
+                }, onProgress, onError);
+            }
+            for (var i = 0; i < urls.length; i++) {
+                loadHDRData(i, onLoad, onProgress, onError);
+            }
+            return texture;
+        },
+        setDataType: function (value) {
+            this.type = value;
+            this.hdrLoader.setDataType(value);
+            return this;
+        }
+    });
+
+    return threex.loaders.HDRCubeTextureLoader = HDRCubeTextureLoader;
+});
+define('skylark-threejs-ex/loaders/KMZLoader',[
+    "skylark-threejs",
+    "../threex",
+    './ColladaLoader'
+], function (
+    THREE, 
+    threex,
+    ColladaLoader
+) {
+    'use strict';
+    var KMZLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+    };
+    KMZLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: KMZLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(scope.manager);
+            loader.setPath(scope.path);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, function (text) {
+                onLoad(scope.parse(text));
+            }, onProgress, onError);
+        },
+        parse: function (data) {
+            function findFile(url) {
+                for (var path in zip.files) {
+                    if (path.substr(-url.length) === url) {
+                        return zip.files[path];
+                    }
+                }
+            }
+            var manager = new THREE.LoadingManager();
+            manager.setURLModifier(function (url) {
+                var image = findFile(url);
+                if (image) {
+                    console.log('Loading', url);
+                    var blob = new Blob([image.asArrayBuffer()], { type: 'application/octet-stream' });
+                    return URL.createObjectURL(blob);
+                }
+                return url;
+            });
+            var zip = new JSZip(data);
+            if (zip.files['doc.kml']) {
+                var xml = new DOMParser().parseFromString(zip.files['doc.kml'].asText(), 'application/xml');
+                var model = xml.querySelector('Placemark Model Link href');
+                if (model) {
+                    var loader = new ColladaLoader(manager);
+                    return loader.parse(zip.files[model.textContent].asText());
+                }
+            } else {
+                console.warn('KMZLoader: Missing doc.kml file.');
+                for (var path in zip.files) {
+                    var extension = path.split('.').pop().toLowerCase();
+                    if (extension === 'dae') {
+                        var loader = new ColladaLoader(manager);
+                        return loader.parse(zip.files[path].asText());
+                    }
+                }
+            }
+            console.error("KMZLoader: Couldn't find .dae file.");
+            return { scene: new THREE.Group() };
+        }
+    });
+
+    return threex.loaders.KMZLoader = KMZLoader;
+});
+define('skylark-threejs-ex/loaders/KTXLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var KTXLoader = function (manager) {
+        THREE.CompressedTextureLoader.call(this, manager);
+    };
+    KTXLoader.prototype = Object.assign(Object.create(THREE.CompressedTextureLoader.prototype), {
+        constructor: KTXLoader,
+        parse: function (buffer, loadMipmaps) {
+            var ktx = new KhronosTextureContainer(buffer, 1);
+            return {
+                mipmaps: ktx.mipmaps(loadMipmaps),
+                width: ktx.pixelWidth,
+                height: ktx.pixelHeight,
+                format: ktx.glInternalFormat,
+                isCubemap: ktx.numberOfFaces === 6,
+                mipmapCount: ktx.numberOfMipmapLevels
+            };
+        }
+    });
+    var KhronosTextureContainer = function () {
+        function KhronosTextureContainer(arrayBuffer, facesExpected) {
+            this.arrayBuffer = arrayBuffer;
+            var identifier = new Uint8Array(this.arrayBuffer, 0, 12);
+            if (identifier[0] !== 171 || identifier[1] !== 75 || identifier[2] !== 84 || identifier[3] !== 88 || identifier[4] !== 32 || identifier[5] !== 49 || identifier[6] !== 49 || identifier[7] !== 187 || identifier[8] !== 13 || identifier[9] !== 10 || identifier[10] !== 26 || identifier[11] !== 10) {
+                console.error('texture missing KTX identifier');
+                return;
+            }
+            var dataSize = Uint32Array.BYTES_PER_ELEMENT;
+            var headerDataView = new DataView(this.arrayBuffer, 12, 13 * dataSize);
+            var endianness = headerDataView.getUint32(0, true);
+            var littleEndian = endianness === 67305985;
+            this.glType = headerDataView.getUint32(1 * dataSize, littleEndian);
+            this.glTypeSize = headerDataView.getUint32(2 * dataSize, littleEndian);
+            this.glFormat = headerDataView.getUint32(3 * dataSize, littleEndian);
+            this.glInternalFormat = headerDataView.getUint32(4 * dataSize, littleEndian);
+            this.glBaseInternalFormat = headerDataView.getUint32(5 * dataSize, littleEndian);
+            this.pixelWidth = headerDataView.getUint32(6 * dataSize, littleEndian);
+            this.pixelHeight = headerDataView.getUint32(7 * dataSize, littleEndian);
+            this.pixelDepth = headerDataView.getUint32(8 * dataSize, littleEndian);
+            this.numberOfArrayElements = headerDataView.getUint32(9 * dataSize, littleEndian);
+            this.numberOfFaces = headerDataView.getUint32(10 * dataSize, littleEndian);
+            this.numberOfMipmapLevels = headerDataView.getUint32(11 * dataSize, littleEndian);
+            this.bytesOfKeyValueData = headerDataView.getUint32(12 * dataSize, littleEndian);
+            if (this.glType !== 0) {
+                console.warn('only compressed formats currently supported');
+                return;
+            } else {
+                this.numberOfMipmapLevels = Math.max(1, this.numberOfMipmapLevels);
+            }
+            if (this.pixelHeight === 0 || this.pixelDepth !== 0) {
+                console.warn('only 2D textures currently supported');
+                return;
+            }
+            if (this.numberOfArrayElements !== 0) {
+                console.warn('texture arrays not currently supported');
+                return;
+            }
+            if (this.numberOfFaces !== facesExpected) {
+                console.warn('number of faces expected' + facesExpected + ', but found ' + this.numberOfFaces);
+                return;
+            }
+            this.loadType = KhronosTextureContainer.COMPRESSED_2D;
+        }
+        KhronosTextureContainer.prototype.mipmaps = function (loadMipmaps) {
+            var mipmaps = [];
+            var dataOffset = KhronosTextureContainer.HEADER_LEN + this.bytesOfKeyValueData;
+            var width = this.pixelWidth;
+            var height = this.pixelHeight;
+            var mipmapCount = loadMipmaps ? this.numberOfMipmapLevels : 1;
+            for (var level = 0; level < mipmapCount; level++) {
+                var imageSize = new Int32Array(this.arrayBuffer, dataOffset, 1)[0];
+                dataOffset += 4;
+                for (var face = 0; face < this.numberOfFaces; face++) {
+                    var byteArray = new Uint8Array(this.arrayBuffer, dataOffset, imageSize);
+                    mipmaps.push({
+                        'data': byteArray,
+                        'width': width,
+                        'height': height
+                    });
+                    dataOffset += imageSize;
+                    dataOffset += 3 - (imageSize + 3) % 4;
+                }
+                width = Math.max(1, width * 0.5);
+                height = Math.max(1, height * 0.5);
+            }
+            return mipmaps;
+        };
+        KhronosTextureContainer.HEADER_LEN = 12 + 13 * 4;
+        KhronosTextureContainer.COMPRESSED_2D = 0;
+        KhronosTextureContainer.COMPRESSED_3D = 1;
+        KhronosTextureContainer.TEX_2D = 2;
+        KhronosTextureContainer.TEX_3D = 3;
+        return KhronosTextureContainer;
+    }();
+
+    return threex.loaders.KTXLoader = KTXLoader;
+});
+define('skylark-threejs-ex/loaders/LDrawLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var LDrawLoader = function () {
+        var conditionalLineVertShader = `
+	attribute vec3 control0;
+	attribute vec3 control1;
+	attribute vec3 direction;
+	varying float discardFlag;
+
+	#include <common>
+	#include <color_pars_vertex>
+	#include <fog_pars_vertex>
+	#include <logdepthbuf_pars_vertex>
+	#include <clipping_planes_pars_vertex>
+	void main() {
+		#include <color_vertex>
+
+		vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+		gl_Position = projectionMatrix * mvPosition;
+
+		// Transform the line segment ends and control points into camera clip space
+		vec4 c0 = projectionMatrix * modelViewMatrix * vec4( control0, 1.0 );
+		vec4 c1 = projectionMatrix * modelViewMatrix * vec4( control1, 1.0 );
+		vec4 p0 = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+		vec4 p1 = projectionMatrix * modelViewMatrix * vec4( position + direction, 1.0 );
+
+		c0.xy /= c0.w;
+		c1.xy /= c1.w;
+		p0.xy /= p0.w;
+		p1.xy /= p1.w;
+
+		// Get the direction of the segment and an orthogonal vector
+		vec2 dir = p1.xy - p0.xy;
+		vec2 norm = vec2( -dir.y, dir.x );
+
+		// Get control point directions from the line
+		vec2 c0dir = c0.xy - p1.xy;
+		vec2 c1dir = c1.xy - p1.xy;
+
+		// If the vectors to the controls points are pointed in different directions away
+		// from the line segment then the line should not be drawn.
+		float d0 = dot( normalize( norm ), normalize( c0dir ) );
+		float d1 = dot( normalize( norm ), normalize( c1dir ) );
+		discardFlag = float( sign( d0 ) != sign( d1 ) );
+
+		#include <logdepthbuf_vertex>
+		#include <clipping_planes_vertex>
+		#include <fog_vertex>
+	}
+	`;
+        var conditionalLineFragShader = `
+	uniform vec3 diffuse;
+	uniform float opacity;
+	varying float discardFlag;
+
+	#include <common>
+	#include <color_pars_fragment>
+	#include <fog_pars_fragment>
+	#include <logdepthbuf_pars_fragment>
+	#include <clipping_planes_pars_fragment>
+	void main() {
+
+		if ( discardFlag > 0.5 ) discard;
+
+		#include <clipping_planes_fragment>
+		vec3 outgoingLight = vec3( 0.0 );
+		vec4 diffuseColor = vec4( diffuse, opacity );
+		#include <logdepthbuf_fragment>
+		#include <color_fragment>
+		outgoingLight = diffuseColor.rgb; // simple shader
+		gl_FragColor = vec4( outgoingLight, diffuseColor.a );
+		#include <tonemapping_fragment>
+		#include <encodings_fragment>
+		#include <fog_fragment>
+		#include <premultiplied_alpha_fragment>
+	}
+	`;
+        var tempVec0 = new THREE.Vector3();
+        var tempVec1 = new THREE.Vector3();
+        function smoothNormals(triangles, lineSegments) {
+            function hashVertex(v) {
+                var x = ~~(v.x * 100);
+                var y = ~~(v.y * 100);
+                var z = ~~(v.z * 100);
+                return `${ x },${ y },${ z }`;
+            }
+            function hashEdge(v0, v1) {
+                return `${ hashVertex(v0) }_${ hashVertex(v1) }`;
+            }
+            var hardEdges = new Set();
+            var halfEdgeList = {};
+            var fullHalfEdgeList = {};
+            var normals = [];
+            for (var i = 0, l = lineSegments.length; i < l; i++) {
+                var ls = lineSegments[i];
+                var v0 = ls.v0;
+                var v1 = ls.v1;
+                hardEdges.add(hashEdge(v0, v1));
+                hardEdges.add(hashEdge(v1, v0));
+            }
+            for (var i = 0, l = triangles.length; i < l; i++) {
+                var tri = triangles[i];
+                for (var i2 = 0, l2 = 3; i2 < l2; i2++) {
+                    var index = i2;
+                    var next = (i2 + 1) % 3;
+                    var v0 = tri[`v${ index }`];
+                    var v1 = tri[`v${ next }`];
+                    var hash = hashEdge(v0, v1);
+                    if (hardEdges.has(hash))
+                        continue;
+                    halfEdgeList[hash] = tri;
+                    fullHalfEdgeList[hash] = tri;
+                }
+            }
+            while (true) {
+                var halfEdges = Object.keys(halfEdgeList);
+                if (halfEdges.length === 0)
+                    break;
+                var i = 0;
+                var queue = [fullHalfEdgeList[halfEdges[0]]];
+                while (i < queue.length) {
+                    var tri = queue[i];
+                    i++;
+                    var faceNormal = tri.faceNormal;
+                    if (tri.n0 === null) {
+                        tri.n0 = faceNormal.clone();
+                        normals.push(tri.n0);
+                    }
+                    if (tri.n1 === null) {
+                        tri.n1 = faceNormal.clone();
+                        normals.push(tri.n1);
+                    }
+                    if (tri.n2 === null) {
+                        tri.n2 = faceNormal.clone();
+                        normals.push(tri.n2);
+                    }
+                    for (var i2 = 0, l2 = 3; i2 < l2; i2++) {
+                        var index = i2;
+                        var next = (i2 + 1) % 3;
+                        var v0 = tri[`v${ index }`];
+                        var v1 = tri[`v${ next }`];
+                        var hash = hashEdge(v0, v1);
+                        delete halfEdgeList[hash];
+                        var reverseHash = hashEdge(v1, v0);
+                        var otherTri = fullHalfEdgeList[reverseHash];
+                        if (otherTri) {
+                            if (Math.abs(otherTri.faceNormal.dot(tri.faceNormal)) < 0.25) {
+                                continue;
+                            }
+                            if (reverseHash in halfEdgeList) {
+                                queue.push(otherTri);
+                                delete halfEdgeList[reverseHash];
+                            }
+                            for (var i3 = 0, l3 = 3; i3 < l3; i3++) {
+                                var otherIndex = i3;
+                                var otherNext = (i3 + 1) % 3;
+                                var otherV0 = otherTri[`v${ otherIndex }`];
+                                var otherV1 = otherTri[`v${ otherNext }`];
+                                var otherHash = hashEdge(otherV0, otherV1);
+                                if (otherHash === reverseHash) {
+                                    if (otherTri[`n${ otherIndex }`] === null) {
+                                        var norm = tri[`n${ next }`];
+                                        otherTri[`n${ otherIndex }`] = norm;
+                                        norm.add(otherTri.faceNormal);
+                                    }
+                                    if (otherTri[`n${ otherNext }`] === null) {
+                                        var norm = tri[`n${ index }`];
+                                        otherTri[`n${ otherNext }`] = norm;
+                                        norm.add(otherTri.faceNormal);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (var i = 0, l = normals.length; i < l; i++) {
+                normals[i].normalize();
+            }
+        }
+        function isPrimitiveType(type) {
+            return /primitive/i.test(type) || type === 'Subpart';
+        }
+        function LineParser(line, lineNumber) {
+            this.line = line;
+            this.lineLength = line.length;
+            this.currentCharIndex = 0;
+            this.currentChar = ' ';
+            this.lineNumber = lineNumber;
+        }
+        LineParser.prototype = {
+            constructor: LineParser,
+            seekNonSpace: function () {
+                while (this.currentCharIndex < this.lineLength) {
+                    this.currentChar = this.line.charAt(this.currentCharIndex);
+                    if (this.currentChar !== ' ' && this.currentChar !== '\t') {
+                        return;
+                    }
+                    this.currentCharIndex++;
+                }
+            },
+            getToken: function () {
+                var pos0 = this.currentCharIndex++;
+                while (this.currentCharIndex < this.lineLength) {
+                    this.currentChar = this.line.charAt(this.currentCharIndex);
+                    if (this.currentChar === ' ' || this.currentChar === '\t') {
+                        break;
+                    }
+                    this.currentCharIndex++;
+                }
+                var pos1 = this.currentCharIndex;
+                this.seekNonSpace();
+                return this.line.substring(pos0, pos1);
+            },
+            getRemainingString: function () {
+                return this.line.substring(this.currentCharIndex, this.lineLength);
+            },
+            isAtTheEnd: function () {
+                return this.currentCharIndex >= this.lineLength;
+            },
+            setToEnd: function () {
+                this.currentCharIndex = this.lineLength;
+            },
+            getLineNumberString: function () {
+                return this.lineNumber >= 0 ? ' at line ' + this.lineNumber : '';
+            }
+        };
+        function sortByMaterial(a, b) {
+            if (a.colourCode === b.colourCode) {
+                return 0;
+            }
+            if (a.colourCode < b.colourCode) {
+                return -1;
+            }
+            return 1;
+        }
+        function createObject(elements, elementSize, isConditionalSegments) {
+            elements.sort(sortByMaterial);
+            var positions = [];
+            var normals = [];
+            var materials = [];
+            var bufferGeometry = new THREE.BufferGeometry();
+            var prevMaterial = null;
+            var index0 = 0;
+            var numGroupVerts = 0;
+            for (var iElem = 0, nElem = elements.length; iElem < nElem; iElem++) {
+                var elem = elements[iElem];
+                var v0 = elem.v0;
+                var v1 = elem.v1;
+                positions.push(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
+                if (elementSize === 3) {
+                    positions.push(elem.v2.x, elem.v2.y, elem.v2.z);
+                    var n0 = elem.n0 || elem.faceNormal;
+                    var n1 = elem.n1 || elem.faceNormal;
+                    var n2 = elem.n2 || elem.faceNormal;
+                    normals.push(n0.x, n0.y, n0.z);
+                    normals.push(n1.x, n1.y, n1.z);
+                    normals.push(n2.x, n2.y, n2.z);
+                }
+                if (prevMaterial !== elem.material) {
+                    if (prevMaterial !== null) {
+                        bufferGeometry.addGroup(index0, numGroupVerts, materials.length - 1);
+                    }
+                    materials.push(elem.material);
+                    prevMaterial = elem.material;
+                    index0 = iElem * elementSize;
+                    numGroupVerts = elementSize;
+                } else {
+                    numGroupVerts += elementSize;
+                }
+            }
+            if (numGroupVerts > 0) {
+                bufferGeometry.addGroup(index0, Infinity, materials.length - 1);
+            }
+            bufferGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            if (elementSize === 3) {
+                bufferGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+            }
+            var object3d = null;
+            if (elementSize === 2) {
+                object3d = new THREE.LineSegments(bufferGeometry, materials);
+            } else if (elementSize === 3) {
+                object3d = new THREE.Mesh(bufferGeometry, materials);
+            }
+            if (isConditionalSegments) {
+                object3d.isConditionalLine = true;
+                var controlArray0 = new Float32Array(elements.length * 3 * 2);
+                var controlArray1 = new Float32Array(elements.length * 3 * 2);
+                var directionArray = new Float32Array(elements.length * 3 * 2);
+                for (var i = 0, l = elements.length; i < l; i++) {
+                    var os = elements[i];
+                    var c0 = os.c0;
+                    var c1 = os.c1;
+                    var v0 = os.v0;
+                    var v1 = os.v1;
+                    var index = i * 3 * 2;
+                    controlArray0[index + 0] = c0.x;
+                    controlArray0[index + 1] = c0.y;
+                    controlArray0[index + 2] = c0.z;
+                    controlArray0[index + 3] = c0.x;
+                    controlArray0[index + 4] = c0.y;
+                    controlArray0[index + 5] = c0.z;
+                    controlArray1[index + 0] = c1.x;
+                    controlArray1[index + 1] = c1.y;
+                    controlArray1[index + 2] = c1.z;
+                    controlArray1[index + 3] = c1.x;
+                    controlArray1[index + 4] = c1.y;
+                    controlArray1[index + 5] = c1.z;
+                    directionArray[index + 0] = v1.x - v0.x;
+                    directionArray[index + 1] = v1.y - v0.y;
+                    directionArray[index + 2] = v1.z - v0.z;
+                    directionArray[index + 3] = v1.x - v0.x;
+                    directionArray[index + 4] = v1.y - v0.y;
+                    directionArray[index + 5] = v1.z - v0.z;
+                }
+                bufferGeometry.setAttribute('control0', new THREE.BufferAttribute(controlArray0, 3, false));
+                bufferGeometry.setAttribute('control1', new THREE.BufferAttribute(controlArray1, 3, false));
+                bufferGeometry.setAttribute('direction', new THREE.BufferAttribute(directionArray, 3, false));
+            }
+            return object3d;
+        }
+        function LDrawLoader(manager) {
+            THREE.Loader.call(this, manager);
+            this.parseScopesStack = null;
+            this.materials = [];
+            this.subobjectCache = {};
+            this.fileMap = null;
+            this.setMaterials([
+                this.parseColourMetaDirective(new LineParser('Main_Colour CODE 16 VALUE #FF8080 EDGE #333333')),
+                this.parseColourMetaDirective(new LineParser('Edge_Colour CODE 24 VALUE #A0A0A0 EDGE #333333'))
+            ]);
+            this.separateObjects = false;
+            this.smoothNormals = true;
+        }
+        LDrawLoader.FINISH_TYPE_DEFAULT = 0;
+        LDrawLoader.FINISH_TYPE_CHROME = 1;
+        LDrawLoader.FINISH_TYPE_PEARLESCENT = 2;
+        LDrawLoader.FINISH_TYPE_RUBBER = 3;
+        LDrawLoader.FINISH_TYPE_MATTE_METALLIC = 4;
+        LDrawLoader.FINISH_TYPE_METAL = 5;
+        LDrawLoader.FILE_LOCATION_AS_IS = 0;
+        LDrawLoader.FILE_LOCATION_TRY_PARTS = 1;
+        LDrawLoader.FILE_LOCATION_TRY_P = 2;
+        LDrawLoader.FILE_LOCATION_TRY_MODELS = 3;
+        LDrawLoader.FILE_LOCATION_TRY_RELATIVE = 4;
+        LDrawLoader.FILE_LOCATION_TRY_ABSOLUTE = 5;
+        LDrawLoader.FILE_LOCATION_NOT_FOUND = 6;
+        LDrawLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+            constructor: LDrawLoader,
+            load: function (url, onLoad, onProgress, onError) {
+                if (!this.fileMap) {
+                    this.fileMap = {};
+                }
+                var scope = this;
+                var fileLoader = new THREE.FileLoader(this.manager);
+                fileLoader.setPath(this.path);
+                fileLoader.load(url, function (text) {
+                    scope.processObject(text, onLoad, null, url);
+                }, onProgress, onError);
+            },
+            parse: function (text, path, onLoad) {
+                this.processObject(text, onLoad, null, path);
+            },
+            setMaterials: function (materials) {
+                this.parseScopesStack = [];
+                this.newParseScopeLevel(materials);
+                this.getCurrentParseScope().isFromParse = false;
+                this.materials = materials;
+                return this;
+            },
+            setFileMap: function (fileMap) {
+                this.fileMap = fileMap;
+                return this;
+            },
+            newParseScopeLevel: function (materials) {
+                var matLib = {};
+                if (materials) {
+                    for (var i = 0, n = materials.length; i < n; i++) {
+                        var material = materials[i];
+                        matLib[material.userData.code] = material;
+                    }
+                }
+                var topParseScope = this.getCurrentParseScope();
+                var newParseScope = {
+                    lib: matLib,
+                    url: null,
+                    subobjects: null,
+                    numSubobjects: 0,
+                    subobjectIndex: 0,
+                    inverted: false,
+                    category: null,
+                    keywords: null,
+                    currentFileName: null,
+                    mainColourCode: topParseScope ? topParseScope.mainColourCode : '16',
+                    mainEdgeColourCode: topParseScope ? topParseScope.mainEdgeColourCode : '24',
+                    currentMatrix: new THREE.Matrix4(),
+                    matrix: new THREE.Matrix4(),
+                    isFromParse: true,
+                    triangles: null,
+                    lineSegments: null,
+                    conditionalSegments: null,
+                    startingConstructionStep: false
+                };
+                this.parseScopesStack.push(newParseScope);
+                return newParseScope;
+            },
+            removeScopeLevel: function () {
+                this.parseScopesStack.pop();
+                return this;
+            },
+            addMaterial: function (material) {
+                var matLib = this.getCurrentParseScope().lib;
+                if (!matLib[material.userData.code]) {
+                    this.materials.push(material);
+                }
+                matLib[material.userData.code] = material;
+                return this;
+            },
+            getMaterial: function (colourCode) {
+                if (colourCode.startsWith('0x2')) {
+                    var colour = colourCode.substring(3);
+                    return this.parseColourMetaDirective(new LineParser('Direct_Color_' + colour + ' CODE -1 VALUE #' + colour + ' EDGE #' + colour + ''));
+                }
+                for (var i = this.parseScopesStack.length - 1; i >= 0; i--) {
+                    var material = this.parseScopesStack[i].lib[colourCode];
+                    if (material) {
+                        return material;
+                    }
+                }
+                return null;
+            },
+            getParentParseScope: function () {
+                if (this.parseScopesStack.length > 1) {
+                    return this.parseScopesStack[this.parseScopesStack.length - 2];
+                }
+                return null;
+            },
+            getCurrentParseScope: function () {
+                if (this.parseScopesStack.length > 0) {
+                    return this.parseScopesStack[this.parseScopesStack.length - 1];
+                }
+                return null;
+            },
+            parseColourMetaDirective: function (lineParser) {
+                var code = null;
+                var colour = 16711935;
+                var edgeColour = 16711935;
+                var alpha = 1;
+                var isTransparent = false;
+                var luminance = 0;
+                var finishType = LDrawLoader.FINISH_TYPE_DEFAULT;
+                var canHaveEnvMap = true;
+                var edgeMaterial = null;
+                var name = lineParser.getToken();
+                if (!name) {
+                    throw 'LDrawLoader: Material name was expected after "!COLOUR tag' + lineParser.getLineNumberString() + '.';
+                }
+                var token = null;
+                while (true) {
+                    token = lineParser.getToken();
+                    if (!token) {
+                        break;
+                    }
+                    switch (token.toUpperCase()) {
+                    case 'CODE':
+                        code = lineParser.getToken();
+                        break;
+                    case 'VALUE':
+                        colour = lineParser.getToken();
+                        if (colour.startsWith('0x')) {
+                            colour = '#' + colour.substring(2);
+                        } else if (!colour.startsWith('#')) {
+                            throw 'LDrawLoader: Invalid colour while parsing material' + lineParser.getLineNumberString() + '.';
+                        }
+                        break;
+                    case 'EDGE':
+                        edgeColour = lineParser.getToken();
+                        if (edgeColour.startsWith('0x')) {
+                            edgeColour = '#' + edgeColour.substring(2);
+                        } else if (!edgeColour.startsWith('#')) {
+                            edgeMaterial = this.getMaterial(edgeColour);
+                            if (!edgeMaterial) {
+                                throw 'LDrawLoader: Invalid edge colour while parsing material' + lineParser.getLineNumberString() + '.';
+                            }
+                            edgeMaterial = edgeMaterial.userData.edgeMaterial;
+                        }
+                        break;
+                    case 'ALPHA':
+                        alpha = parseInt(lineParser.getToken());
+                        if (isNaN(alpha)) {
+                            throw 'LDrawLoader: Invalid alpha value in material definition' + lineParser.getLineNumberString() + '.';
+                        }
+                        alpha = Math.max(0, Math.min(1, alpha / 255));
+                        if (alpha < 1) {
+                            isTransparent = true;
+                        }
+                        break;
+                    case 'LUMINANCE':
+                        luminance = parseInt(lineParser.getToken());
+                        if (isNaN(luminance)) {
+                            throw 'LDrawLoader: Invalid luminance value in material definition' + LineParser.getLineNumberString() + '.';
+                        }
+                        luminance = Math.max(0, Math.min(1, luminance / 255));
+                        break;
+                    case 'CHROME':
+                        finishType = LDrawLoader.FINISH_TYPE_CHROME;
+                        break;
+                    case 'PEARLESCENT':
+                        finishType = LDrawLoader.FINISH_TYPE_PEARLESCENT;
+                        break;
+                    case 'RUBBER':
+                        finishType = LDrawLoader.FINISH_TYPE_RUBBER;
+                        break;
+                    case 'MATTE_METALLIC':
+                        finishType = LDrawLoader.FINISH_TYPE_MATTE_METALLIC;
+                        break;
+                    case 'METAL':
+                        finishType = LDrawLoader.FINISH_TYPE_METAL;
+                        break;
+                    case 'MATERIAL':
+                        lineParser.setToEnd();
+                        break;
+                    default:
+                        throw 'LDrawLoader: Unknown token "' + token + '" while parsing material' + lineParser.getLineNumberString() + '.';
+                        break;
+                    }
+                }
+                var material = null;
+                switch (finishType) {
+                case LDrawLoader.FINISH_TYPE_DEFAULT:
+                    material = new THREE.MeshStandardMaterial({
+                        color: colour,
+                        roughness: 0.3,
+                        envMapIntensity: 0.3,
+                        metalness: 0
+                    });
+                    break;
+                case LDrawLoader.FINISH_TYPE_PEARLESCENT:
+                    var specular = new THREE.Color(colour);
+                    var hsl = specular.getHSL({
+                        h: 0,
+                        s: 0,
+                        l: 0
+                    });
+                    hsl.h = (hsl.h + 0.5) % 1;
+                    hsl.l = Math.min(1, hsl.l + (1 - hsl.l) * 0.7);
+                    specular.setHSL(hsl.h, hsl.s, hsl.l);
+                    material = new THREE.MeshPhongMaterial({
+                        color: colour,
+                        specular: specular,
+                        shininess: 10,
+                        reflectivity: 0.3
+                    });
+                    break;
+                case LDrawLoader.FINISH_TYPE_CHROME:
+                    material = new THREE.MeshStandardMaterial({
+                        color: colour,
+                        roughness: 0,
+                        metalness: 1
+                    });
+                    break;
+                case LDrawLoader.FINISH_TYPE_RUBBER:
+                    material = new THREE.MeshStandardMaterial({
+                        color: colour,
+                        roughness: 0.9,
+                        metalness: 0
+                    });
+                    canHaveEnvMap = false;
+                    break;
+                case LDrawLoader.FINISH_TYPE_MATTE_METALLIC:
+                    material = new THREE.MeshStandardMaterial({
+                        color: colour,
+                        roughness: 0.8,
+                        metalness: 0.4
+                    });
+                    break;
+                case LDrawLoader.FINISH_TYPE_METAL:
+                    material = new THREE.MeshStandardMaterial({
+                        color: colour,
+                        roughness: 0.2,
+                        metalness: 0.85
+                    });
+                    break;
+                default:
+                    break;
+                }
+                material.transparent = isTransparent;
+                material.premultipliedAlpha = true;
+                material.opacity = alpha;
+                material.depthWrite = !isTransparent;
+                material.polygonOffset = true;
+                material.polygonOffsetFactor = 1;
+                material.userData.canHaveEnvMap = canHaveEnvMap;
+                if (luminance !== 0) {
+                    material.emissive.set(material.color).multiplyScalar(luminance);
+                }
+                if (!edgeMaterial) {
+                    edgeMaterial = new THREE.LineBasicMaterial({
+                        color: edgeColour,
+                        transparent: isTransparent,
+                        opacity: alpha,
+                        depthWrite: !isTransparent
+                    });
+                    edgeMaterial.userData.code = code;
+                    edgeMaterial.name = name + ' - Edge';
+                    edgeMaterial.userData.canHaveEnvMap = false;
+                    edgeMaterial.userData.conditionalEdgeMaterial = new THREE.ShaderMaterial({
+                        vertexShader: conditionalLineVertShader,
+                        fragmentShader: conditionalLineFragShader,
+                        uniforms: {
+                            diffuse: { value: new THREE.Color(edgeColour) },
+                            opacity: { value: alpha }
+                        },
+                        transparent: isTransparent,
+                        depthWrite: !isTransparent
+                    });
+                    edgeMaterial.userData.conditionalEdgeMaterial.userData.canHaveEnvMap = false;
+                }
+                material.userData.code = code;
+                material.name = name;
+                material.userData.edgeMaterial = edgeMaterial;
+                return material;
+            },
+            objectParse: function (text) {
+                var parentParseScope = this.getParentParseScope();
+                var mainColourCode = parentParseScope.mainColourCode;
+                var mainEdgeColourCode = parentParseScope.mainEdgeColourCode;
+                var currentParseScope = this.getCurrentParseScope();
+                var triangles;
+                var lineSegments;
+                var conditionalSegments;
+                var subobjects = [];
+                var category = null;
+                var keywords = null;
+                if (text.indexOf('\r\n') !== -1) {
+                    text = text.replace(/\r\n/g, '\n');
+                }
+                var lines = text.split('\n');
+                var numLines = lines.length;
+                var lineIndex = 0;
+                var parsingEmbeddedFiles = false;
+                var currentEmbeddedFileName = null;
+                var currentEmbeddedText = null;
+                var bfcCertified = false;
+                var bfcCCW = true;
+                var bfcInverted = false;
+                var bfcCull = true;
+                var type = '';
+                var startingConstructionStep = false;
+                var scope = this;
+                function parseColourCode(lineParser, forEdge) {
+                    var colourCode = lineParser.getToken();
+                    if (!forEdge && colourCode === '16') {
+                        colourCode = mainColourCode;
+                    }
+                    if (forEdge && colourCode === '24') {
+                        colourCode = mainEdgeColourCode;
+                    }
+                    var material = scope.getMaterial(colourCode);
+                    if (!material) {
+                        throw 'LDrawLoader: Unknown colour code "' + colourCode + '" is used' + lineParser.getLineNumberString() + ' but it was not defined previously.';
+                    }
+                    return material;
+                }
+                function parseVector(lp) {
+                    var v = new THREE.Vector3(parseFloat(lp.getToken()), parseFloat(lp.getToken()), parseFloat(lp.getToken()));
+                    if (!scope.separateObjects) {
+                        v.applyMatrix4(currentParseScope.currentMatrix);
+                    }
+                    return v;
+                }
+                for (lineIndex = 0; lineIndex < numLines; lineIndex++) {
+                    var line = lines[lineIndex];
+                    if (line.length === 0)
+                        continue;
+                    if (parsingEmbeddedFiles) {
+                        if (line.startsWith('0 FILE ')) {
+                            this.subobjectCache[currentEmbeddedFileName.toLowerCase()] = currentEmbeddedText;
+                            currentEmbeddedFileName = line.substring(7);
+                            currentEmbeddedText = '';
+                        } else {
+                            currentEmbeddedText += line + '\n';
+                        }
+                        continue;
+                    }
+                    var lp = new LineParser(line, lineIndex + 1);
+                    lp.seekNonSpace();
+                    if (lp.isAtTheEnd()) {
+                        continue;
+                    }
+                    var lineType = lp.getToken();
+                    switch (lineType) {
+                    case '0':
+                        var meta = lp.getToken();
+                        if (meta) {
+                            switch (meta) {
+                            case '!LDRAW_ORG':
+                                type = lp.getToken();
+                                currentParseScope.triangles = [];
+                                currentParseScope.lineSegments = [];
+                                currentParseScope.conditionalSegments = [];
+                                currentParseScope.type = type;
+                                var isRoot = !parentParseScope.isFromParse;
+                                if (isRoot || scope.separateObjects && !isPrimitiveType(type)) {
+                                    currentParseScope.groupObject = new THREE.Group();
+                                    currentParseScope.groupObject.userData.startingConstructionStep = currentParseScope.startingConstructionStep;
+                                }
+                                var matrix = currentParseScope.matrix;
+                                if (matrix.determinant() < 0 && (scope.separateObjects && isPrimitiveType(type) || !scope.separateObjects)) {
+                                    currentParseScope.inverted = !currentParseScope.inverted;
+                                }
+                                triangles = currentParseScope.triangles;
+                                lineSegments = currentParseScope.lineSegments;
+                                conditionalSegments = currentParseScope.conditionalSegments;
+                                break;
+                            case '!COLOUR':
+                                var material = this.parseColourMetaDirective(lp);
+                                if (material) {
+                                    this.addMaterial(material);
+                                } else {
+                                    console.warn('LDrawLoader: Error parsing material' + lp.getLineNumberString());
+                                }
+                                break;
+                            case '!CATEGORY':
+                                category = lp.getToken();
+                                break;
+                            case '!KEYWORDS':
+                                var newKeywords = lp.getRemainingString().split(',');
+                                if (newKeywords.length > 0) {
+                                    if (!keywords) {
+                                        keywords = [];
+                                    }
+                                    newKeywords.forEach(function (keyword) {
+                                        keywords.push(keyword.trim());
+                                    });
+                                }
+                                break;
+                            case 'FILE':
+                                if (lineIndex > 0) {
+                                    parsingEmbeddedFiles = true;
+                                    currentEmbeddedFileName = lp.getRemainingString();
+                                    currentEmbeddedText = '';
+                                    bfcCertified = false;
+                                    bfcCCW = true;
+                                }
+                                break;
+                            case 'BFC':
+                                while (!lp.isAtTheEnd()) {
+                                    var token = lp.getToken();
+                                    switch (token) {
+                                    case 'CERTIFY':
+                                    case 'NOCERTIFY':
+                                        bfcCertified = token === 'CERTIFY';
+                                        bfcCCW = true;
+                                        break;
+                                    case 'CW':
+                                    case 'CCW':
+                                        bfcCCW = token === 'CCW';
+                                        break;
+                                    case 'INVERTNEXT':
+                                        bfcInverted = true;
+                                        break;
+                                    case 'CLIP':
+                                    case 'NOCLIP':
+                                        bfcCull = token === 'CLIP';
+                                        break;
+                                    default:
+                                        console.warn('THREE.LDrawLoader: BFC directive "' + token + '" is unknown.');
+                                        break;
+                                    }
+                                }
+                                break;
+                            case 'STEP':
+                                startingConstructionStep = true;
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        break;
+                    case '1':
+                        var material = parseColourCode(lp);
+                        var posX = parseFloat(lp.getToken());
+                        var posY = parseFloat(lp.getToken());
+                        var posZ = parseFloat(lp.getToken());
+                        var m0 = parseFloat(lp.getToken());
+                        var m1 = parseFloat(lp.getToken());
+                        var m2 = parseFloat(lp.getToken());
+                        var m3 = parseFloat(lp.getToken());
+                        var m4 = parseFloat(lp.getToken());
+                        var m5 = parseFloat(lp.getToken());
+                        var m6 = parseFloat(lp.getToken());
+                        var m7 = parseFloat(lp.getToken());
+                        var m8 = parseFloat(lp.getToken());
+                        var matrix = new THREE.Matrix4().set(m0, m1, m2, posX, m3, m4, m5, posY, m6, m7, m8, posZ, 0, 0, 0, 1);
+                        var fileName = lp.getRemainingString().trim().replace(/\\/g, '/');
+                        if (scope.fileMap[fileName]) {
+                            fileName = scope.fileMap[fileName];
+                        } else {
+                            if (fileName.startsWith('s/')) {
+                                fileName = 'parts/' + fileName;
+                            } else if (fileName.startsWith('48/')) {
+                                fileName = 'p/' + fileName;
+                            }
+                        }
+                        subobjects.push({
+                            material: material,
+                            matrix: matrix,
+                            fileName: fileName,
+                            originalFileName: fileName,
+                            locationState: LDrawLoader.FILE_LOCATION_AS_IS,
+                            url: null,
+                            triedLowerCase: false,
+                            inverted: bfcInverted !== currentParseScope.inverted,
+                            startingConstructionStep: startingConstructionStep
+                        });
+                        bfcInverted = false;
+                        break;
+                    case '2':
+                        var material = parseColourCode(lp, true);
+                        var segment = {
+                            material: material.userData.edgeMaterial,
+                            colourCode: material.userData.code,
+                            v0: parseVector(lp),
+                            v1: parseVector(lp)
+                        };
+                        lineSegments.push(segment);
+                        break;
+                    case '5':
+                        var material = parseColourCode(lp, true);
+                        var segment = {
+                            material: material.userData.edgeMaterial.userData.conditionalEdgeMaterial,
+                            colourCode: material.userData.code,
+                            v0: parseVector(lp),
+                            v1: parseVector(lp),
+                            c0: parseVector(lp),
+                            c1: parseVector(lp)
+                        };
+                        conditionalSegments.push(segment);
+                        break;
+                    case '3':
+                        var material = parseColourCode(lp);
+                        var inverted = currentParseScope.inverted;
+                        var ccw = bfcCCW !== inverted;
+                        var doubleSided = !bfcCertified || !bfcCull;
+                        var v0, v1, v2, faceNormal;
+                        if (ccw === true) {
+                            v0 = parseVector(lp);
+                            v1 = parseVector(lp);
+                            v2 = parseVector(lp);
+                        } else {
+                            v2 = parseVector(lp);
+                            v1 = parseVector(lp);
+                            v0 = parseVector(lp);
+                        }
+                        tempVec0.subVectors(v1, v0);
+                        tempVec1.subVectors(v2, v1);
+                        faceNormal = new THREE.Vector3().crossVectors(tempVec0, tempVec1).normalize();
+                        triangles.push({
+                            material: material,
+                            colourCode: material.userData.code,
+                            v0: v0,
+                            v1: v1,
+                            v2: v2,
+                            faceNormal: faceNormal,
+                            n0: null,
+                            n1: null,
+                            n2: null
+                        });
+                        if (doubleSided === true) {
+                            triangles.push({
+                                material: material,
+                                colourCode: material.userData.code,
+                                v0: v0,
+                                v1: v2,
+                                v2: v1,
+                                faceNormal: faceNormal,
+                                n0: null,
+                                n1: null,
+                                n2: null
+                            });
+                        }
+                        break;
+                    case '4':
+                        var material = parseColourCode(lp);
+                        var inverted = currentParseScope.inverted;
+                        var ccw = bfcCCW !== inverted;
+                        var doubleSided = !bfcCertified || !bfcCull;
+                        var v0, v1, v2, v3, faceNormal;
+                        if (ccw === true) {
+                            v0 = parseVector(lp);
+                            v1 = parseVector(lp);
+                            v2 = parseVector(lp);
+                            v3 = parseVector(lp);
+                        } else {
+                            v3 = parseVector(lp);
+                            v2 = parseVector(lp);
+                            v1 = parseVector(lp);
+                            v0 = parseVector(lp);
+                        }
+                        tempVec0.subVectors(v1, v0);
+                        tempVec1.subVectors(v2, v1);
+                        faceNormal = new THREE.Vector3().crossVectors(tempVec0, tempVec1).normalize();
+                        triangles.push({
+                            material: material,
+                            colourCode: material.userData.code,
+                            v0: v0,
+                            v1: v1,
+                            v2: v2,
+                            faceNormal: faceNormal,
+                            n0: null,
+                            n1: null,
+                            n2: null
+                        });
+                        triangles.push({
+                            material: material,
+                            colourCode: material.userData.code,
+                            v0: v0,
+                            v1: v2,
+                            v2: v3,
+                            faceNormal: faceNormal,
+                            n0: null,
+                            n1: null,
+                            n2: null
+                        });
+                        if (doubleSided === true) {
+                            triangles.push({
+                                material: material,
+                                colourCode: material.userData.code,
+                                v0: v0,
+                                v1: v2,
+                                v2: v1,
+                                faceNormal: faceNormal,
+                                n0: null,
+                                n1: null,
+                                n2: null
+                            });
+                            triangles.push({
+                                material: material,
+                                colourCode: material.userData.code,
+                                v0: v0,
+                                v1: v3,
+                                v2: v2,
+                                faceNormal: faceNormal,
+                                n0: null,
+                                n1: null,
+                                n2: null
+                            });
+                        }
+                        break;
+                    default:
+                        throw 'LDrawLoader: Unknown line type "' + lineType + '"' + lp.getLineNumberString() + '.';
+                        break;
+                    }
+                }
+                if (parsingEmbeddedFiles) {
+                    this.subobjectCache[currentEmbeddedFileName.toLowerCase()] = currentEmbeddedText;
+                }
+                currentParseScope.category = category;
+                currentParseScope.keywords = keywords;
+                currentParseScope.subobjects = subobjects;
+                currentParseScope.numSubobjects = subobjects.length;
+                currentParseScope.subobjectIndex = 0;
+            },
+            computeConstructionSteps: function (model) {
+                var stepNumber = 0;
+                model.traverse(c => {
+                    if (c.isGroup) {
+                        if (c.userData.startingConstructionStep) {
+                            stepNumber++;
+                        }
+                        c.userData.constructionStep = stepNumber;
+                    }
+                });
+                model.userData.numConstructionSteps = stepNumber + 1;
+            },
+            processObject: function (text, onProcessed, subobject, url) {
+                var scope = this;
+                var parseScope = scope.newParseScopeLevel();
+                parseScope.url = url;
+                var parentParseScope = scope.getParentParseScope();
+                if (subobject) {
+                    parseScope.currentMatrix.multiplyMatrices(parentParseScope.currentMatrix, subobject.matrix);
+                    parseScope.matrix.copy(subobject.matrix);
+                    parseScope.inverted = subobject.inverted;
+                    parseScope.startingConstructionStep = subobject.startingConstructionStep;
+                }
+                var currentFileName = parentParseScope.currentFileName;
+                if (currentFileName !== null) {
+                    currentFileName = parentParseScope.currentFileName.toLowerCase();
+                }
+                if (scope.subobjectCache[currentFileName] === undefined) {
+                    scope.subobjectCache[currentFileName] = text;
+                }
+                scope.objectParse(text);
+                var finishedCount = 0;
+                onSubobjectFinish();
+                function onSubobjectFinish() {
+                    finishedCount++;
+                    if (finishedCount === parseScope.subobjects.length + 1) {
+                        finalizeObject();
+                    } else {
+                        var subobject = parseScope.subobjects[parseScope.subobjectIndex];
+                        Promise.resolve().then(function () {
+                            loadSubobject(subobject);
+                        });
+                        parseScope.subobjectIndex++;
+                    }
+                }
+                function finalizeObject() {
+                    if (scope.smoothNormals && parseScope.type === 'Part') {
+                        smoothNormals(parseScope.triangles, parseScope.lineSegments);
+                    }
+                    var isRoot = !parentParseScope.isFromParse;
+                    if (scope.separateObjects && !isPrimitiveType(parseScope.type) || isRoot) {
+                        const objGroup = parseScope.groupObject;
+                        if (parseScope.triangles.length > 0) {
+                            objGroup.add(createObject(parseScope.triangles, 3));
+                        }
+                        if (parseScope.lineSegments.length > 0) {
+                            objGroup.add(createObject(parseScope.lineSegments, 2));
+                        }
+                        if (parseScope.conditionalSegments.length > 0) {
+                            objGroup.add(createObject(parseScope.conditionalSegments, 2, true));
+                        }
+                        if (parentParseScope.groupObject) {
+                            objGroup.name = parseScope.fileName;
+                            objGroup.userData.category = parseScope.category;
+                            objGroup.userData.keywords = parseScope.keywords;
+                            parseScope.matrix.decompose(objGroup.position, objGroup.quaternion, objGroup.scale);
+                            parentParseScope.groupObject.add(objGroup);
+                        }
+                    } else {
+                        var separateObjects = scope.separateObjects;
+                        var parentLineSegments = parentParseScope.lineSegments;
+                        var parentConditionalSegments = parentParseScope.conditionalSegments;
+                        var parentTriangles = parentParseScope.triangles;
+                        var lineSegments = parseScope.lineSegments;
+                        var conditionalSegments = parseScope.conditionalSegments;
+                        var triangles = parseScope.triangles;
+                        for (var i = 0, l = lineSegments.length; i < l; i++) {
+                            var ls = lineSegments[i];
+                            if (separateObjects) {
+                                ls.v0.applyMatrix4(parseScope.matrix);
+                                ls.v1.applyMatrix4(parseScope.matrix);
+                            }
+                            parentLineSegments.push(ls);
+                        }
+                        for (var i = 0, l = conditionalSegments.length; i < l; i++) {
+                            var os = conditionalSegments[i];
+                            if (separateObjects) {
+                                os.v0.applyMatrix4(parseScope.matrix);
+                                os.v1.applyMatrix4(parseScope.matrix);
+                                os.c0.applyMatrix4(parseScope.matrix);
+                                os.c1.applyMatrix4(parseScope.matrix);
+                            }
+                            parentConditionalSegments.push(os);
+                        }
+                        for (var i = 0, l = triangles.length; i < l; i++) {
+                            var tri = triangles[i];
+                            if (separateObjects) {
+                                tri.v0 = tri.v0.clone().applyMatrix4(parseScope.matrix);
+                                tri.v1 = tri.v1.clone().applyMatrix4(parseScope.matrix);
+                                tri.v2 = tri.v2.clone().applyMatrix4(parseScope.matrix);
+                                tempVec0.subVectors(tri.v1, tri.v0);
+                                tempVec1.subVectors(tri.v2, tri.v1);
+                                tri.faceNormal.crossVectors(tempVec0, tempVec1).normalize();
+                            }
+                            parentTriangles.push(tri);
+                        }
+                    }
+                    scope.removeScopeLevel();
+                    if (!parentParseScope.isFromParse) {
+                        scope.computeConstructionSteps(parseScope.groupObject);
+                    }
+                    if (onProcessed) {
+                        onProcessed(parseScope.groupObject);
+                    }
+                }
+                function loadSubobject(subobject) {
+                    parseScope.mainColourCode = subobject.material.userData.code;
+                    parseScope.mainEdgeColourCode = subobject.material.userData.edgeMaterial.userData.code;
+                    parseScope.currentFileName = subobject.originalFileName;
+                    var cached = scope.subobjectCache[subobject.originalFileName.toLowerCase()];
+                    if (cached) {
+                        scope.processObject(cached, function (subobjectGroup) {
+                            onSubobjectLoaded(subobjectGroup, subobject);
+                            onSubobjectFinish();
+                        }, subobject, url);
+                        return;
+                    }
+                    var subobjectURL = subobject.fileName;
+                    var newLocationState = LDrawLoader.FILE_LOCATION_NOT_FOUND;
+                    switch (subobject.locationState) {
+                    case LDrawLoader.FILE_LOCATION_AS_IS:
+                        newLocationState = subobject.locationState + 1;
+                        break;
+                    case LDrawLoader.FILE_LOCATION_TRY_PARTS:
+                        subobjectURL = 'parts/' + subobjectURL;
+                        newLocationState = subobject.locationState + 1;
+                        break;
+                    case LDrawLoader.FILE_LOCATION_TRY_P:
+                        subobjectURL = 'p/' + subobjectURL;
+                        newLocationState = subobject.locationState + 1;
+                        break;
+                    case LDrawLoader.FILE_LOCATION_TRY_MODELS:
+                        subobjectURL = 'models/' + subobjectURL;
+                        newLocationState = subobject.locationState + 1;
+                        break;
+                    case LDrawLoader.FILE_LOCATION_TRY_RELATIVE:
+                        subobjectURL = url.substring(0, url.lastIndexOf('/') + 1) + subobjectURL;
+                        newLocationState = subobject.locationState + 1;
+                        break;
+                    case LDrawLoader.FILE_LOCATION_TRY_ABSOLUTE:
+                        if (subobject.triedLowerCase) {
+                            newLocationState = LDrawLoader.FILE_LOCATION_NOT_FOUND;
+                        } else {
+                            subobject.fileName = subobject.fileName.toLowerCase();
+                            subobjectURL = subobject.fileName;
+                            subobject.triedLowerCase = true;
+                            newLocationState = LDrawLoader.FILE_LOCATION_AS_IS;
+                        }
+                        break;
+                    case LDrawLoader.FILE_LOCATION_NOT_FOUND:
+                        console.warn('LDrawLoader: Subobject "' + subobject.originalFileName + '" could not be found.');
+                        return;
+                    }
+                    subobject.locationState = newLocationState;
+                    subobject.url = subobjectURL;
+                    var fileLoader = new THREE.FileLoader(scope.manager);
+                    fileLoader.setPath(scope.path);
+                    fileLoader.load(subobjectURL, function (text) {
+                        scope.processObject(text, function (subobjectGroup) {
+                            onSubobjectLoaded(subobjectGroup, subobject);
+                            onSubobjectFinish();
+                        }, subobject, url);
+                    }, undefined, function (err) {
+                        onSubobjectError(err, subobject);
+                    }, subobject);
+                }
+                function onSubobjectLoaded(subobjectGroup, subobject) {
+                    if (subobjectGroup === null) {
+                        loadSubobject(subobject);
+                        return;
+                    }
+                    scope.fileMap[subobject.originalFileName] = subobject.url;
+                }
+                function onSubobjectError(err, subobject) {
+                    loadSubobject(subobject);
+                }
+            }
+        });
+        return LDrawLoader;
+    }();
+
+    return  threex.loaders.LDrawLoader = LDrawLoader;
+});
+define('skylark-threejs-ex/loaders/LWOLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    function LWO2Parser(IFFParser) {
+        this.IFF = IFFParser;
+    }
+    LWO2Parser.prototype = {
+        constructor: LWO2Parser,
+        parseBlock: function () {
+            this.IFF.debugger.offset = this.IFF.reader.offset;
+            this.IFF.debugger.closeForms();
+            var blockID = this.IFF.reader.getIDTag();
+            var length = this.IFF.reader.getUint32();
+            if (length > this.IFF.reader.dv.byteLength - this.IFF.reader.offset) {
+                this.IFF.reader.offset -= 4;
+                length = this.IFF.reader.getUint16();
+            }
+            this.IFF.debugger.dataOffset = this.IFF.reader.offset;
+            this.IFF.debugger.length = length;
+            switch (blockID) {
+            case 'FORM':
+                this.IFF.parseForm(length);
+                break;
+            case 'ICON':
+            case 'VMPA':
+            case 'BBOX':
+            case 'NORM':
+            case 'PRE ':
+            case 'POST':
+            case 'KEY ':
+            case 'SPAN':
+            case 'TIME':
+            case 'CLRS':
+            case 'CLRA':
+            case 'FILT':
+            case 'DITH':
+            case 'CONT':
+            case 'BRIT':
+            case 'SATR':
+            case 'HUE ':
+            case 'GAMM':
+            case 'NEGA':
+            case 'IFLT':
+            case 'PFLT':
+            case 'PROJ':
+            case 'AXIS':
+            case 'AAST':
+            case 'PIXB':
+            case 'AUVO':
+            case 'STCK':
+            case 'PROC':
+            case 'VALU':
+            case 'FUNC':
+            case 'PNAM':
+            case 'INAM':
+            case 'GRST':
+            case 'GREN':
+            case 'GRPT':
+            case 'FKEY':
+            case 'IKEY':
+            case 'CSYS':
+            case 'OPAQ':
+            case 'CMAP':
+            case 'NLOC':
+            case 'NZOM':
+            case 'NVER':
+            case 'NSRV':
+            case 'NVSK':
+            case 'NCRD':
+            case 'WRPW':
+            case 'WRPH':
+            case 'NMOD':
+            case 'NPRW':
+            case 'NPLA':
+            case 'NODS':
+            case 'VERS':
+            case 'ENUM':
+            case 'TAG ':
+            case 'OPAC':
+            case 'CGMD':
+            case 'CGTY':
+            case 'CGST':
+            case 'CGEN':
+            case 'CGTS':
+            case 'CGTE':
+            case 'OSMP':
+            case 'OMDE':
+            case 'OUTR':
+            case 'FLAG':
+            case 'TRNL':
+            case 'GLOW':
+            case 'GVAL':
+            case 'SHRP':
+            case 'RFOP':
+            case 'RSAN':
+            case 'TROP':
+            case 'RBLR':
+            case 'TBLR':
+            case 'CLRH':
+            case 'CLRF':
+            case 'ADTR':
+            case 'LINE':
+            case 'ALPH':
+            case 'VCOL':
+            case 'ENAB':
+                this.IFF.debugger.skipped = true;
+                this.IFF.reader.skip(length);
+                break;
+            case 'SURF':
+                this.IFF.parseSurfaceLwo2(length);
+                break;
+            case 'CLIP':
+                this.IFF.parseClipLwo2(length);
+                break;
+            case 'IPIX':
+            case 'IMIP':
+            case 'IMOD':
+            case 'AMOD':
+            case 'IINV':
+            case 'INCR':
+            case 'IAXS':
+            case 'IFOT':
+            case 'ITIM':
+            case 'IWRL':
+            case 'IUTI':
+            case 'IINX':
+            case 'IINY':
+            case 'IINZ':
+            case 'IREF':
+                if (length === 4)
+                    this.IFF.currentNode[blockID] = this.IFF.reader.getInt32();
+                else
+                    this.IFF.reader.skip(length);
+                break;
+            case 'OTAG':
+                this.IFF.parseObjectTag();
+                break;
+            case 'LAYR':
+                this.IFF.parseLayer(length);
+                break;
+            case 'PNTS':
+                this.IFF.parsePoints(length);
+                break;
+            case 'VMAP':
+                this.IFF.parseVertexMapping(length);
+                break;
+            case 'AUVU':
+            case 'AUVN':
+                this.IFF.reader.skip(length - 1);
+                this.IFF.reader.getVariableLengthIndex();
+                break;
+            case 'POLS':
+                this.IFF.parsePolygonList(length);
+                break;
+            case 'TAGS':
+                this.IFF.parseTagStrings(length);
+                break;
+            case 'PTAG':
+                this.IFF.parsePolygonTagMapping(length);
+                break;
+            case 'VMAD':
+                this.IFF.parseVertexMapping(length, true);
+                break;
+            case 'DESC':
+                this.IFF.currentForm.description = this.IFF.reader.getString();
+                break;
+            case 'TEXT':
+            case 'CMNT':
+            case 'NCOM':
+                this.IFF.currentForm.comment = this.IFF.reader.getString();
+                break;
+            case 'NAME':
+                this.IFF.currentForm.channelName = this.IFF.reader.getString();
+                break;
+            case 'WRAP':
+                this.IFF.currentForm.wrap = {
+                    w: this.IFF.reader.getUint16(),
+                    h: this.IFF.reader.getUint16()
+                };
+                break;
+            case 'IMAG':
+                var index = this.IFF.reader.getVariableLengthIndex();
+                this.IFF.currentForm.imageIndex = index;
+                break;
+            case 'OREF':
+                this.IFF.currentForm.referenceObject = this.IFF.reader.getString();
+                break;
+            case 'ROID':
+                this.IFF.currentForm.referenceObjectID = this.IFF.reader.getUint32();
+                break;
+            case 'SSHN':
+                this.IFF.currentSurface.surfaceShaderName = this.IFF.reader.getString();
+                break;
+            case 'AOVN':
+                this.IFF.currentSurface.surfaceCustomAOVName = this.IFF.reader.getString();
+                break;
+            case 'NSTA':
+                this.IFF.currentForm.disabled = this.IFF.reader.getUint16();
+                break;
+            case 'NRNM':
+                this.IFF.currentForm.realName = this.IFF.reader.getString();
+                break;
+            case 'NNME':
+                this.IFF.currentForm.refName = this.IFF.reader.getString();
+                this.IFF.currentSurface.nodes[this.IFF.currentForm.refName] = this.IFF.currentForm;
+                break;
+            case 'INME':
+                if (!this.IFF.currentForm.nodeName)
+                    this.IFF.currentForm.nodeName = [];
+                this.IFF.currentForm.nodeName.push(this.IFF.reader.getString());
+                break;
+            case 'IINN':
+                if (!this.IFF.currentForm.inputNodeName)
+                    this.IFF.currentForm.inputNodeName = [];
+                this.IFF.currentForm.inputNodeName.push(this.IFF.reader.getString());
+                break;
+            case 'IINM':
+                if (!this.IFF.currentForm.inputName)
+                    this.IFF.currentForm.inputName = [];
+                this.IFF.currentForm.inputName.push(this.IFF.reader.getString());
+                break;
+            case 'IONM':
+                if (!this.IFF.currentForm.inputOutputName)
+                    this.IFF.currentForm.inputOutputName = [];
+                this.IFF.currentForm.inputOutputName.push(this.IFF.reader.getString());
+                break;
+            case 'FNAM':
+                this.IFF.currentForm.fileName = this.IFF.reader.getString();
+                break;
+            case 'CHAN':
+                if (length === 4)
+                    this.IFF.currentForm.textureChannel = this.IFF.reader.getIDTag();
+                else
+                    this.IFF.reader.skip(length);
+                break;
+            case 'SMAN':
+                var maxSmoothingAngle = this.IFF.reader.getFloat32();
+                this.IFF.currentSurface.attributes.smooth = maxSmoothingAngle < 0 ? false : true;
+                break;
+            case 'COLR':
+                this.IFF.currentSurface.attributes.undefined = { value: this.IFF.reader.getFloat32Array(3) };
+                this.IFF.reader.skip(2);
+                break;
+            case 'LUMI':
+                this.IFF.currentSurface.attributes.Luminosity = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'SPEC':
+                this.IFF.currentSurface.attributes.Specular = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'DIFF':
+                this.IFF.currentSurface.attributes.Diffuse = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'REFL':
+                this.IFF.currentSurface.attributes.Reflection = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'GLOS':
+                this.IFF.currentSurface.attributes.Glossiness = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'TRAN':
+                this.IFF.currentSurface.attributes.opacity = this.IFF.reader.getFloat32();
+                this.IFF.reader.skip(2);
+                break;
+            case 'BUMP':
+                this.IFF.currentSurface.attributes.bumpStrength = this.IFF.reader.getFloat32();
+                this.IFF.reader.skip(2);
+                break;
+            case 'SIDE':
+                this.IFF.currentSurface.attributes.side = this.IFF.reader.getUint16();
+                break;
+            case 'RIMG':
+                this.IFF.currentSurface.attributes.reflectionMap = this.IFF.reader.getVariableLengthIndex();
+                break;
+            case 'RIND':
+                this.IFF.currentSurface.attributes.refractiveIndex = this.IFF.reader.getFloat32();
+                this.IFF.reader.skip(2);
+                break;
+            case 'TIMG':
+                this.IFF.currentSurface.attributes.refractionMap = this.IFF.reader.getVariableLengthIndex();
+                break;
+            case 'IMAP':
+                this.IFF.reader.skip(2);
+                break;
+            case 'TMAP':
+                this.IFF.debugger.skipped = true;
+                this.IFF.reader.skip(length);
+                break;
+            case 'IUVI':
+                this.IFF.currentNode.UVChannel = this.IFF.reader.getString(length);
+                break;
+            case 'IUTL':
+                this.IFF.currentNode.widthWrappingMode = this.IFF.reader.getUint32();
+                break;
+            case 'IVTL':
+                this.IFF.currentNode.heightWrappingMode = this.IFF.reader.getUint32();
+                break;
+            case 'BLOK':
+                break;
+            default:
+                this.IFF.parseUnknownCHUNK(blockID, length);
+            }
+            if (blockID != 'FORM') {
+                this.IFF.debugger.node = 1;
+                this.IFF.debugger.nodeID = blockID;
+                this.IFF.debugger.log();
+            }
+            if (this.IFF.reader.offset >= this.IFF.currentFormEnd) {
+                this.IFF.currentForm = this.IFF.parentForm;
+            }
+        }
+    };
+    function LWO3Parser(IFFParser) {
+        this.IFF = IFFParser;
+    }
+    LWO3Parser.prototype = {
+        constructor: LWO3Parser,
+        parseBlock: function () {
+            this.IFF.debugger.offset = this.IFF.reader.offset;
+            this.IFF.debugger.closeForms();
+            var blockID = this.IFF.reader.getIDTag();
+            var length = this.IFF.reader.getUint32();
+            this.IFF.debugger.dataOffset = this.IFF.reader.offset;
+            this.IFF.debugger.length = length;
+            switch (blockID) {
+            case 'FORM':
+                this.IFF.parseForm(length);
+                break;
+            case 'ICON':
+            case 'VMPA':
+            case 'BBOX':
+            case 'NORM':
+            case 'PRE ':
+            case 'POST':
+            case 'KEY ':
+            case 'SPAN':
+            case 'TIME':
+            case 'CLRS':
+            case 'CLRA':
+            case 'FILT':
+            case 'DITH':
+            case 'CONT':
+            case 'BRIT':
+            case 'SATR':
+            case 'HUE ':
+            case 'GAMM':
+            case 'NEGA':
+            case 'IFLT':
+            case 'PFLT':
+            case 'PROJ':
+            case 'AXIS':
+            case 'AAST':
+            case 'PIXB':
+            case 'STCK':
+            case 'VALU':
+            case 'PNAM':
+            case 'INAM':
+            case 'GRST':
+            case 'GREN':
+            case 'GRPT':
+            case 'FKEY':
+            case 'IKEY':
+            case 'CSYS':
+            case 'OPAQ':
+            case 'CMAP':
+            case 'NLOC':
+            case 'NZOM':
+            case 'NVER':
+            case 'NSRV':
+            case 'NCRD':
+            case 'NMOD':
+            case 'NSEL':
+            case 'NPRW':
+            case 'NPLA':
+            case 'VERS':
+            case 'ENUM':
+            case 'TAG ':
+            case 'CGMD':
+            case 'CGTY':
+            case 'CGST':
+            case 'CGEN':
+            case 'CGTS':
+            case 'CGTE':
+            case 'OSMP':
+            case 'OMDE':
+            case 'OUTR':
+            case 'FLAG':
+            case 'TRNL':
+            case 'SHRP':
+            case 'RFOP':
+            case 'RSAN':
+            case 'TROP':
+            case 'RBLR':
+            case 'TBLR':
+            case 'CLRH':
+            case 'CLRF':
+            case 'ADTR':
+            case 'GLOW':
+            case 'LINE':
+            case 'ALPH':
+            case 'VCOL':
+            case 'ENAB':
+                this.IFF.debugger.skipped = true;
+                this.IFF.reader.skip(length);
+                break;
+            case 'IPIX':
+            case 'IMIP':
+            case 'IMOD':
+            case 'AMOD':
+            case 'IINV':
+            case 'INCR':
+            case 'IAXS':
+            case 'IFOT':
+            case 'ITIM':
+            case 'IWRL':
+            case 'IUTI':
+            case 'IINX':
+            case 'IINY':
+            case 'IINZ':
+            case 'IREF':
+                if (length === 4)
+                    this.IFF.currentNode[blockID] = this.IFF.reader.getInt32();
+                else
+                    this.IFF.reader.skip(length);
+                break;
+            case 'OTAG':
+                this.IFF.parseObjectTag();
+                break;
+            case 'LAYR':
+                this.IFF.parseLayer(length);
+                break;
+            case 'PNTS':
+                this.IFF.parsePoints(length);
+                break;
+            case 'VMAP':
+                this.IFF.parseVertexMapping(length);
+                break;
+            case 'POLS':
+                this.IFF.parsePolygonList(length);
+                break;
+            case 'TAGS':
+                this.IFF.parseTagStrings(length);
+                break;
+            case 'PTAG':
+                this.IFF.parsePolygonTagMapping(length);
+                break;
+            case 'VMAD':
+                this.IFF.parseVertexMapping(length, true);
+                break;
+            case 'DESC':
+                this.IFF.currentForm.description = this.IFF.reader.getString();
+                break;
+            case 'TEXT':
+            case 'CMNT':
+            case 'NCOM':
+                this.IFF.currentForm.comment = this.IFF.reader.getString();
+                break;
+            case 'NAME':
+                this.IFF.currentForm.channelName = this.IFF.reader.getString();
+                break;
+            case 'WRAP':
+                this.IFF.currentForm.wrap = {
+                    w: this.IFF.reader.getUint16(),
+                    h: this.IFF.reader.getUint16()
+                };
+                break;
+            case 'IMAG':
+                var index = this.IFF.reader.getVariableLengthIndex();
+                this.IFF.currentForm.imageIndex = index;
+                break;
+            case 'OREF':
+                this.IFF.currentForm.referenceObject = this.IFF.reader.getString();
+                break;
+            case 'ROID':
+                this.IFF.currentForm.referenceObjectID = this.IFF.reader.getUint32();
+                break;
+            case 'SSHN':
+                this.IFF.currentSurface.surfaceShaderName = this.IFF.reader.getString();
+                break;
+            case 'AOVN':
+                this.IFF.currentSurface.surfaceCustomAOVName = this.IFF.reader.getString();
+                break;
+            case 'NSTA':
+                this.IFF.currentForm.disabled = this.IFF.reader.getUint16();
+                break;
+            case 'NRNM':
+                this.IFF.currentForm.realName = this.IFF.reader.getString();
+                break;
+            case 'NNME':
+                this.IFF.currentForm.refName = this.IFF.reader.getString();
+                this.IFF.currentSurface.nodes[this.IFF.currentForm.refName] = this.IFF.currentForm;
+                break;
+            case 'INME':
+                if (!this.IFF.currentForm.nodeName)
+                    this.IFF.currentForm.nodeName = [];
+                this.IFF.currentForm.nodeName.push(this.IFF.reader.getString());
+                break;
+            case 'IINN':
+                if (!this.IFF.currentForm.inputNodeName)
+                    this.IFF.currentForm.inputNodeName = [];
+                this.IFF.currentForm.inputNodeName.push(this.IFF.reader.getString());
+                break;
+            case 'IINM':
+                if (!this.IFF.currentForm.inputName)
+                    this.IFF.currentForm.inputName = [];
+                this.IFF.currentForm.inputName.push(this.IFF.reader.getString());
+                break;
+            case 'IONM':
+                if (!this.IFF.currentForm.inputOutputName)
+                    this.IFF.currentForm.inputOutputName = [];
+                this.IFF.currentForm.inputOutputName.push(this.IFF.reader.getString());
+                break;
+            case 'FNAM':
+                this.IFF.currentForm.fileName = this.IFF.reader.getString();
+                break;
+            case 'CHAN':
+                if (length === 4)
+                    this.IFF.currentForm.textureChannel = this.IFF.reader.getIDTag();
+                else
+                    this.IFF.reader.skip(length);
+                break;
+            case 'SMAN':
+                var maxSmoothingAngle = this.IFF.reader.getFloat32();
+                this.IFF.currentSurface.attributes.smooth = maxSmoothingAngle < 0 ? false : true;
+                break;
+            case 'COLR':
+                this.IFF.currentSurface.attributes.undefined = { value: this.IFF.reader.getFloat32Array(3) };
+                this.IFF.reader.skip(2);
+                break;
+            case 'LUMI':
+                this.IFF.currentSurface.attributes.Luminosity = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'SPEC':
+                this.IFF.currentSurface.attributes.Specular = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'DIFF':
+                this.IFF.currentSurface.attributes.Diffuse = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'REFL':
+                this.IFF.currentSurface.attributes.Reflection = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'GLOS':
+                this.IFF.currentSurface.attributes.Glossiness = { value: this.IFF.reader.getFloat32() };
+                this.IFF.reader.skip(2);
+                break;
+            case 'TRAN':
+                this.IFF.currentSurface.attributes.opacity = this.IFF.reader.getFloat32();
+                this.IFF.reader.skip(2);
+                break;
+            case 'BUMP':
+                this.IFF.currentSurface.attributes.bumpStrength = this.IFF.reader.getFloat32();
+                this.IFF.reader.skip(2);
+                break;
+            case 'SIDE':
+                this.IFF.currentSurface.attributes.side = this.IFF.reader.getUint16();
+                break;
+            case 'RIMG':
+                this.IFF.currentSurface.attributes.reflectionMap = this.IFF.reader.getVariableLengthIndex();
+                break;
+            case 'RIND':
+                this.IFF.currentSurface.attributes.refractiveIndex = this.IFF.reader.getFloat32();
+                this.IFF.reader.skip(2);
+                break;
+            case 'TIMG':
+                this.IFF.currentSurface.attributes.refractionMap = this.IFF.reader.getVariableLengthIndex();
+                break;
+            case 'IMAP':
+                this.IFF.currentSurface.attributes.imageMapIndex = this.IFF.reader.getUint32();
+                break;
+            case 'IUVI':
+                this.IFF.currentNode.UVChannel = this.IFF.reader.getString(length);
+                break;
+            case 'IUTL':
+                this.IFF.currentNode.widthWrappingMode = this.IFF.reader.getUint32();
+                break;
+            case 'IVTL':
+                this.IFF.currentNode.heightWrappingMode = this.IFF.reader.getUint32();
+                break;
+            default:
+                this.IFF.parseUnknownCHUNK(blockID, length);
+            }
+            if (blockID != 'FORM') {
+                this.IFF.debugger.node = 1;
+                this.IFF.debugger.nodeID = blockID;
+                this.IFF.debugger.log();
+            }
+            if (this.IFF.reader.offset >= this.IFF.currentFormEnd) {
+                this.IFF.currentForm = this.IFF.parentForm;
+            }
+        }
+    };
+    function IFFParser() {
+        this.debugger = new Debugger();
+    }
+    IFFParser.prototype = {
+        constructor: IFFParser,
+        parse: function (buffer) {
+            this.reader = new DataViewReader(buffer);
+            this.tree = {
+                materials: {},
+                layers: [],
+                tags: [],
+                textures: []
+            };
+            this.currentLayer = this.tree;
+            this.currentForm = this.tree;
+            this.parseTopForm();
+            if (this.tree.format === undefined)
+                return;
+            if (this.tree.format === 'LWO2') {
+                this.parser = new LWO2Parser(this);
+                while (!this.reader.endOfFile())
+                    this.parser.parseBlock();
+            } else if (this.tree.format === 'LWO3') {
+                this.parser = new LWO3Parser(this);
+                while (!this.reader.endOfFile())
+                    this.parser.parseBlock();
+            }
+            this.debugger.offset = this.reader.offset;
+            this.debugger.closeForms();
+            return this.tree;
+        },
+        parseTopForm() {
+            this.debugger.offset = this.reader.offset;
+            var topForm = this.reader.getIDTag();
+            if (topForm !== 'FORM') {
+                console.warn('LWOLoader: Top-level FORM missing.');
+                return;
+            }
+            var length = this.reader.getUint32();
+            this.debugger.dataOffset = this.reader.offset;
+            this.debugger.length = length;
+            var type = this.reader.getIDTag();
+            if (type === 'LWO2') {
+                this.tree.format = type;
+            } else if (type === 'LWO3') {
+                this.tree.format = type;
+            }
+            this.debugger.node = 0;
+            this.debugger.nodeID = type;
+            this.debugger.log();
+            return;
+        },
+        parseForm(length) {
+            var type = this.reader.getIDTag();
+            switch (type) {
+            case 'ISEQ':
+            case 'ANIM':
+            case 'STCC':
+            case 'VPVL':
+            case 'VPRM':
+            case 'NROT':
+            case 'WRPW':
+            case 'WRPH':
+            case 'FUNC':
+            case 'FALL':
+            case 'OPAC':
+            case 'GRAD':
+            case 'ENVS':
+            case 'VMOP':
+            case 'VMBG':
+            case 'OMAX':
+            case 'STEX':
+            case 'CKBG':
+            case 'CKEY':
+            case 'VMLA':
+            case 'VMLB':
+                this.debugger.skipped = true;
+                this.skipForm(length);
+                break;
+            case 'META':
+            case 'NNDS':
+            case 'NODS':
+            case 'NDTA':
+            case 'ADAT':
+            case 'AOVS':
+            case 'BLOK':
+            case 'IBGC':
+            case 'IOPC':
+            case 'IIMG':
+            case 'TXTR':
+                this.debugger.length = 4;
+                this.debugger.skipped = true;
+                break;
+            case 'IFAL':
+            case 'ISCL':
+            case 'IPOS':
+            case 'IROT':
+            case 'IBMP':
+            case 'IUTD':
+            case 'IVTD':
+                this.parseTextureNodeAttribute(type);
+                break;
+            case 'ENVL':
+                this.parseEnvelope(length);
+                break;
+            case 'CLIP':
+                if (this.tree.format === 'LWO2') {
+                    this.parseForm(length);
+                } else {
+                    this.parseClip(length);
+                }
+                break;
+            case 'STIL':
+                this.parseImage();
+                break;
+            case 'XREF':
+                this.reader.skip(8);
+                this.currentForm.referenceTexture = {
+                    index: this.reader.getUint32(),
+                    refName: this.reader.getString()
+                };
+                break;
+            case 'IMST':
+                this.parseImageStateForm(length);
+                break;
+            case 'SURF':
+                this.parseSurfaceForm(length);
+                break;
+            case 'VALU':
+                this.parseValueForm(length);
+                break;
+            case 'NTAG':
+                this.parseSubNode(length);
+                break;
+            case 'ATTR':
+            case 'SATR':
+                this.setupForm('attributes', length);
+                break;
+            case 'NCON':
+                this.parseConnections(length);
+                break;
+            case 'SSHA':
+                this.parentForm = this.currentForm;
+                this.currentForm = this.currentSurface;
+                this.setupForm('surfaceShader', length);
+                break;
+            case 'SSHD':
+                this.setupForm('surfaceShaderData', length);
+                break;
+            case 'ENTR':
+                this.parseEntryForm(length);
+                break;
+            case 'IMAP':
+                this.parseImageMap(length);
+                break;
+            case 'TAMP':
+                this.parseXVAL('amplitude', length);
+                break;
+            case 'TMAP':
+                this.setupForm('textureMap', length);
+                break;
+            case 'CNTR':
+                this.parseXVAL3('center', length);
+                break;
+            case 'SIZE':
+                this.parseXVAL3('scale', length);
+                break;
+            case 'ROTA':
+                this.parseXVAL3('rotation', length);
+                break;
+            default:
+                this.parseUnknownForm(type, length);
+            }
+            this.debugger.node = 0;
+            this.debugger.nodeID = type;
+            this.debugger.log();
+        },
+        setupForm(type, length) {
+            if (!this.currentForm)
+                this.currentForm = this.currentNode;
+            this.currentFormEnd = this.reader.offset + length;
+            this.parentForm = this.currentForm;
+            if (!this.currentForm[type]) {
+                this.currentForm[type] = {};
+                this.currentForm = this.currentForm[type];
+            } else {
+                console.warn('LWOLoader: form already exists on parent: ', type, this.currentForm);
+                this.currentForm = this.currentForm[type];
+            }
+        },
+        skipForm(length) {
+            this.reader.skip(length - 4);
+        },
+        parseUnknownForm(type, length) {
+            console.warn('LWOLoader: unknown FORM encountered: ' + type, length);
+            printBuffer(this.reader.dv.buffer, this.reader.offset, length - 4);
+            this.reader.skip(length - 4);
+        },
+        parseSurfaceForm(length) {
+            this.reader.skip(8);
+            var name = this.reader.getString();
+            var surface = {
+                attributes: {},
+                connections: {},
+                name: name,
+                inputName: name,
+                nodes: {},
+                source: this.reader.getString()
+            };
+            this.tree.materials[name] = surface;
+            this.currentSurface = surface;
+            this.parentForm = this.tree.materials;
+            this.currentForm = surface;
+            this.currentFormEnd = this.reader.offset + length;
+        },
+        parseSurfaceLwo2(length) {
+            var name = this.reader.getString();
+            var surface = {
+                attributes: {},
+                connections: {},
+                name: name,
+                nodes: {},
+                source: this.reader.getString()
+            };
+            this.tree.materials[name] = surface;
+            this.currentSurface = surface;
+            this.parentForm = this.tree.materials;
+            this.currentForm = surface;
+            this.currentFormEnd = this.reader.offset + length;
+        },
+        parseSubNode(length) {
+            this.reader.skip(8);
+            var name = this.reader.getString();
+            var node = { name: name };
+            this.currentForm = node;
+            this.currentNode = node;
+            this.currentFormEnd = this.reader.offset + length;
+        },
+        parseConnections(length) {
+            this.currentFormEnd = this.reader.offset + length;
+            this.parentForm = this.currentForm;
+            this.currentForm = this.currentSurface.connections;
+        },
+        parseEntryForm(length) {
+            this.reader.skip(8);
+            var name = this.reader.getString();
+            this.currentForm = this.currentNode.attributes;
+            this.setupForm(name, length);
+        },
+        parseValueForm() {
+            this.reader.skip(8);
+            var valueType = this.reader.getString();
+            if (valueType === 'double') {
+                this.currentForm.value = this.reader.getUint64();
+            } else if (valueType === 'int') {
+                this.currentForm.value = this.reader.getUint32();
+            } else if (valueType === 'vparam') {
+                this.reader.skip(24);
+                this.currentForm.value = this.reader.getFloat64();
+            } else if (valueType === 'vparam3') {
+                this.reader.skip(24);
+                this.currentForm.value = this.reader.getFloat64Array(3);
+            }
+        },
+        parseImageStateForm() {
+            this.reader.skip(8);
+            this.currentForm.mipMapLevel = this.reader.getFloat32();
+        },
+        parseImageMap(length) {
+            this.currentFormEnd = this.reader.offset + length;
+            this.parentForm = this.currentForm;
+            if (!this.currentForm.maps)
+                this.currentForm.maps = [];
+            var map = {};
+            this.currentForm.maps.push(map);
+            this.currentForm = map;
+            this.reader.skip(10);
+        },
+        parseTextureNodeAttribute(type) {
+            this.reader.skip(28);
+            this.reader.skip(20);
+            switch (type) {
+            case 'ISCL':
+                this.currentNode.scale = this.reader.getFloat32Array(3);
+                break;
+            case 'IPOS':
+                this.currentNode.position = this.reader.getFloat32Array(3);
+                break;
+            case 'IROT':
+                this.currentNode.rotation = this.reader.getFloat32Array(3);
+                break;
+            case 'IFAL':
+                this.currentNode.falloff = this.reader.getFloat32Array(3);
+                break;
+            case 'IBMP':
+                this.currentNode.amplitude = this.reader.getFloat32();
+                break;
+            case 'IUTD':
+                this.currentNode.uTiles = this.reader.getFloat32();
+                break;
+            case 'IVTD':
+                this.currentNode.vTiles = this.reader.getFloat32();
+                break;
+            }
+            this.reader.skip(2);
+        },
+        parseEnvelope(length) {
+            this.reader.skip(length - 4);
+        },
+        parseClip(length) {
+            var tag = this.reader.getIDTag();
+            if (tag === 'FORM') {
+                this.reader.skip(16);
+                this.currentNode.fileName = this.reader.getString();
+                return;
+            }
+            this.reader.setOffset(this.reader.offset - 4);
+            this.currentFormEnd = this.reader.offset + length;
+            this.parentForm = this.currentForm;
+            this.reader.skip(8);
+            var texture = { index: this.reader.getUint32() };
+            this.tree.textures.push(texture);
+            this.currentForm = texture;
+        },
+        parseClipLwo2(length) {
+            var texture = {
+                index: this.reader.getUint32(),
+                fileName: ''
+            };
+            while (true) {
+                var tag = this.reader.getIDTag();
+                var n_length = this.reader.getUint16();
+                if (tag === 'STIL') {
+                    texture.fileName = this.reader.getString();
+                    break;
+                }
+                if (n_length >= length) {
+                    break;
+                }
+            }
+            this.tree.textures.push(texture);
+            this.currentForm = texture;
+        },
+        parseImage() {
+            this.reader.skip(8);
+            this.currentForm.fileName = this.reader.getString();
+        },
+        parseXVAL(type, length) {
+            var endOffset = this.reader.offset + length - 4;
+            this.reader.skip(8);
+            this.currentForm[type] = this.reader.getFloat32();
+            this.reader.setOffset(endOffset);
+        },
+        parseXVAL3(type, length) {
+            var endOffset = this.reader.offset + length - 4;
+            this.reader.skip(8);
+            this.currentForm[type] = {
+                x: this.reader.getFloat32(),
+                y: this.reader.getFloat32(),
+                z: this.reader.getFloat32()
+            };
+            this.reader.setOffset(endOffset);
+        },
+        parseObjectTag() {
+            if (!this.tree.objectTags)
+                this.tree.objectTags = {};
+            this.tree.objectTags[this.reader.getIDTag()] = { tagString: this.reader.getString() };
+        },
+        parseLayer(length) {
+            var layer = {
+                number: this.reader.getUint16(),
+                flags: this.reader.getUint16(),
+                pivot: this.reader.getFloat32Array(3),
+                name: this.reader.getString()
+            };
+            this.tree.layers.push(layer);
+            this.currentLayer = layer;
+            var parsedLength = 16 + stringOffset(this.currentLayer.name);
+            this.currentLayer.parent = parsedLength < length ? this.reader.getUint16() : -1;
+        },
+        parsePoints(length) {
+            this.currentPoints = [];
+            for (var i = 0; i < length / 4; i += 3) {
+                this.currentPoints.push(this.reader.getFloat32(), this.reader.getFloat32(), -this.reader.getFloat32());
+            }
+        },
+        parseVertexMapping(length, discontinuous) {
+            var finalOffset = this.reader.offset + length;
+            var channelName = this.reader.getString();
+            if (this.reader.offset === finalOffset) {
+                this.currentForm.UVChannel = channelName;
+                return;
+            }
+            this.reader.setOffset(this.reader.offset - stringOffset(channelName));
+            var type = this.reader.getIDTag();
+            this.reader.getUint16();
+            var name = this.reader.getString();
+            var remainingLength = length - 6 - stringOffset(name);
+            switch (type) {
+            case 'TXUV':
+                this.parseUVMapping(name, finalOffset, discontinuous);
+                break;
+            case 'MORF':
+            case 'SPOT':
+                this.parseMorphTargets(name, finalOffset, type);
+                break;
+            case 'APSL':
+            case 'NORM':
+            case 'WGHT':
+            case 'MNVW':
+            case 'PICK':
+            case 'RGB ':
+            case 'RGBA':
+                this.reader.skip(remainingLength);
+                break;
+            default:
+                console.warn('LWOLoader: unknown vertex map type: ' + type);
+                this.reader.skip(remainingLength);
+            }
+        },
+        parseUVMapping(name, finalOffset, discontinuous) {
+            var uvIndices = [];
+            var polyIndices = [];
+            var uvs = [];
+            while (this.reader.offset < finalOffset) {
+                uvIndices.push(this.reader.getVariableLengthIndex());
+                if (discontinuous)
+                    polyIndices.push(this.reader.getVariableLengthIndex());
+                uvs.push(this.reader.getFloat32(), this.reader.getFloat32());
+            }
+            if (discontinuous) {
+                if (!this.currentLayer.discontinuousUVs)
+                    this.currentLayer.discontinuousUVs = {};
+                this.currentLayer.discontinuousUVs[name] = {
+                    uvIndices: uvIndices,
+                    polyIndices: polyIndices,
+                    uvs: uvs
+                };
+            } else {
+                if (!this.currentLayer.uvs)
+                    this.currentLayer.uvs = {};
+                this.currentLayer.uvs[name] = {
+                    uvIndices: uvIndices,
+                    uvs: uvs
+                };
+            }
+        },
+        parseMorphTargets(name, finalOffset, type) {
+            var indices = [];
+            var points = [];
+            type = type === 'MORF' ? 'relative' : 'absolute';
+            while (this.reader.offset < finalOffset) {
+                indices.push(this.reader.getVariableLengthIndex());
+                points.push(this.reader.getFloat32(), this.reader.getFloat32(), -this.reader.getFloat32());
+            }
+            if (!this.currentLayer.morphTargets)
+                this.currentLayer.morphTargets = {};
+            this.currentLayer.morphTargets[name] = {
+                indices: indices,
+                points: points,
+                type: type
+            };
+        },
+        parsePolygonList(length) {
+            var finalOffset = this.reader.offset + length;
+            var type = this.reader.getIDTag();
+            var indices = [];
+            var polygonDimensions = [];
+            while (this.reader.offset < finalOffset) {
+                var numverts = this.reader.getUint16();
+                numverts = numverts & 1023;
+                polygonDimensions.push(numverts);
+                for (var j = 0; j < numverts; j++)
+                    indices.push(this.reader.getVariableLengthIndex());
+            }
+            var geometryData = {
+                type: type,
+                vertexIndices: indices,
+                polygonDimensions: polygonDimensions,
+                points: this.currentPoints
+            };
+            if (polygonDimensions[0] === 1)
+                geometryData.type = 'points';
+            else if (polygonDimensions[0] === 2)
+                geometryData.type = 'lines';
+            this.currentLayer.geometry = geometryData;
+        },
+        parseTagStrings(length) {
+            this.tree.tags = this.reader.getStringArray(length);
+        },
+        parsePolygonTagMapping(length) {
+            var finalOffset = this.reader.offset + length;
+            var type = this.reader.getIDTag();
+            if (type === 'SURF')
+                this.parseMaterialIndices(finalOffset);
+            else {
+                this.reader.skip(length - 4);
+            }
+        },
+        parseMaterialIndices(finalOffset) {
+            this.currentLayer.geometry.materialIndices = [];
+            while (this.reader.offset < finalOffset) {
+                var polygonIndex = this.reader.getVariableLengthIndex();
+                var materialIndex = this.reader.getUint16();
+                this.currentLayer.geometry.materialIndices.push(polygonIndex, materialIndex);
+            }
+        },
+        parseUnknownCHUNK(blockID, length) {
+            console.warn('LWOLoader: unknown chunk type: ' + blockID + ' length: ' + length);
+            var data = this.reader.getString(length);
+            this.currentForm[blockID] = data;
+        }
+    };
+    function DataViewReader(buffer) {
+        this.dv = new DataView(buffer);
+        this.offset = 0;
+    }
+    DataViewReader.prototype = {
+        constructor: DataViewReader,
+        size: function () {
+            return this.dv.buffer.byteLength;
+        },
+        setOffset(offset) {
+            if (offset > 0 && offset < this.dv.buffer.byteLength) {
+                this.offset = offset;
+            } else {
+                console.error('LWOLoader: invalid buffer offset');
+            }
+        },
+        endOfFile: function () {
+            if (this.offset >= this.size())
+                return true;
+            return false;
+        },
+        skip: function (length) {
+            this.offset += length;
+        },
+        getUint8: function () {
+            var value = this.dv.getUint8(this.offset);
+            this.offset += 1;
+            return value;
+        },
+        getUint16: function () {
+            var value = this.dv.getUint16(this.offset);
+            this.offset += 2;
+            return value;
+        },
+        getInt32: function () {
+            var value = this.dv.getInt32(this.offset, false);
+            this.offset += 4;
+            return value;
+        },
+        getUint32: function () {
+            var value = this.dv.getUint32(this.offset, false);
+            this.offset += 4;
+            return value;
+        },
+        getUint64: function () {
+            var low, high;
+            high = this.getUint32();
+            low = this.getUint32();
+            return high * 4294967296 + low;
+        },
+        getFloat32: function () {
+            var value = this.dv.getFloat32(this.offset, false);
+            this.offset += 4;
+            return value;
+        },
+        getFloat32Array: function (size) {
+            var a = [];
+            for (var i = 0; i < size; i++) {
+                a.push(this.getFloat32());
+            }
+            return a;
+        },
+        getFloat64: function () {
+            var value = this.dv.getFloat64(this.offset, this.littleEndian);
+            this.offset += 8;
+            return value;
+        },
+        getFloat64Array: function (size) {
+            var a = [];
+            for (var i = 0; i < size; i++) {
+                a.push(this.getFloat64());
+            }
+            return a;
+        },
+        getVariableLengthIndex() {
+            var firstByte = this.getUint8();
+            if (firstByte === 255) {
+                return this.getUint8() * 65536 + this.getUint8() * 256 + this.getUint8();
+            }
+            return firstByte * 256 + this.getUint8();
+        },
+        getIDTag() {
+            return this.getString(4);
+        },
+        getString: function (size) {
+            if (size === 0)
+                return;
+            var a = [];
+            if (size) {
+                for (var i = 0; i < size; i++) {
+                    a[i] = this.getUint8();
+                }
+            } else {
+                var currentChar;
+                var len = 0;
+                while (currentChar !== 0) {
+                    currentChar = this.getUint8();
+                    if (currentChar !== 0)
+                        a.push(currentChar);
+                    len++;
+                }
+                if (!isEven(len + 1))
+                    this.getUint8();
+            }
+            return THREE.LoaderUtils.decodeText(new Uint8Array(a));
+        },
+        getStringArray: function (size) {
+            var a = this.getString(size);
+            a = a.split('\0');
+            return a.filter(Boolean);
+        }
+    };
+    function Debugger() {
+        this.active = false;
+        this.depth = 0;
+        this.formList = [];
+    }
+    Debugger.prototype = {
+        constructor: Debugger,
+        enable: function () {
+            this.active = true;
+        },
+        log: function () {
+            if (!this.active)
+                return;
+            var nodeType;
+            switch (this.node) {
+            case 0:
+                nodeType = 'FORM';
+                break;
+            case 1:
+                nodeType = 'CHK';
+                break;
+            case 2:
+                nodeType = 'S-CHK';
+                break;
+            }
+            console.log('| '.repeat(this.depth) + nodeType, this.nodeID, `( ${ this.offset } ) -> ( ${ this.dataOffset + this.length } )`, this.node == 0 ? ' {' : '', this.skipped ? 'SKIPPED' : '', this.node == 0 && this.skipped ? '}' : '');
+            if (this.node == 0 && !this.skipped) {
+                this.depth += 1;
+                this.formList.push(this.dataOffset + this.length);
+            }
+            this.skipped = false;
+        },
+        closeForms: function () {
+            if (!this.active)
+                return;
+            for (var i = this.formList.length - 1; i >= 0; i--) {
+                if (this.offset >= this.formList[i]) {
+                    this.depth -= 1;
+                    console.log('| '.repeat(this.depth) + '}');
+                    this.formList.splice(-1, 1);
+                }
+            }
+        }
+    };
+    function isEven(num) {
+        return num % 2;
+    }
+    function stringOffset(string) {
+        return string.length + 1 + (isEven(string.length + 1) ? 1 : 0);
+    }
+    function printBuffer(buffer, from, to) {
+        console.log(THREE.LoaderUtils.decodeText(new Uint8Array(buffer, from, to)));
+    }
+    var lwoTree;
+    var LWOLoader = function (manager, parameters) {
+        THREE.Loader.call(this, manager);
+        parameters = parameters || {};
+        this.resourcePath = parameters.resourcePath !== undefined ? parameters.resourcePath : '';
+    };
+    LWOLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: LWOLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var self = this;
+            var path = self.path === '' ? extractParentUrl(url, 'Objects') : self.path;
+            var modelName = url.split(path).pop().split('.')[0];
+            var loader = new THREE.FileLoader(this.manager);
+            loader.setPath(self.path);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, function (buffer) {
+                onLoad(self.parse(buffer, path, modelName));
+            }, onProgress, onError);
+        },
+        parse: function (iffBuffer, path, modelName) {
+            lwoTree = new IFFParser().parse(iffBuffer);
+            var textureLoader = new THREE.TextureLoader(this.manager).setPath(this.resourcePath || path).setCrossOrigin(this.crossOrigin);
+            return new LWOTreeParser(textureLoader).parse(modelName);
+        }
+    });
+    function LWOTreeParser(textureLoader) {
+        this.textureLoader = textureLoader;
+    }
+    LWOTreeParser.prototype = {
+        constructor: LWOTreeParser,
+        parse: function (modelName) {
+            this.materials = new MaterialParser(this.textureLoader).parse();
+            this.defaultLayerName = modelName;
+            this.meshes = this.parseLayers();
+            return {
+                materials: this.materials,
+                meshes: this.meshes
+            };
+        },
+        parseLayers() {
+            var meshes = [];
+            var finalMeshes = [];
+            var geometryParser = new GeometryParser();
+            var self = this;
+            lwoTree.layers.forEach(function (layer) {
+                var geometry = geometryParser.parse(layer.geometry, layer);
+                var mesh = self.parseMesh(geometry, layer);
+                meshes[layer.number] = mesh;
+                if (layer.parent === -1)
+                    finalMeshes.push(mesh);
+                else
+                    meshes[layer.parent].add(mesh);
+            });
+            this.applyPivots(finalMeshes);
+            return finalMeshes;
+        },
+        parseMesh(geometry, layer) {
+            var mesh;
+            var materials = this.getMaterials(geometry.userData.matNames, layer.geometry.type);
+            this.duplicateUVs(geometry, materials);
+            if (layer.geometry.type === 'points')
+                mesh = new THREE.Points(geometry, materials);
+            else if (layer.geometry.type === 'lines')
+                mesh = new THREE.LineSegments(geometry, materials);
+            else
+                mesh = new THREE.Mesh(geometry, materials);
+            if (layer.name)
+                mesh.name = layer.name;
+            else
+                mesh.name = this.defaultLayerName + '_layer_' + layer.number;
+            mesh.userData.pivot = layer.pivot;
+            return mesh;
+        },
+        applyPivots(meshes) {
+            meshes.forEach(function (mesh) {
+                mesh.traverse(function (child) {
+                    var pivot = child.userData.pivot;
+                    child.position.x += pivot[0];
+                    child.position.y += pivot[1];
+                    child.position.z += pivot[2];
+                    if (child.parent) {
+                        var parentPivot = child.parent.userData.pivot;
+                        child.position.x -= parentPivot[0];
+                        child.position.y -= parentPivot[1];
+                        child.position.z -= parentPivot[2];
+                    }
+                });
+            });
+        },
+        getMaterials(namesArray, type) {
+            var materials = [];
+            var self = this;
+            namesArray.forEach(function (name, i) {
+                materials[i] = self.getMaterialByName(name);
+            });
+            if (type === 'points' || type === 'lines') {
+                materials.forEach(function (mat, i) {
+                    var spec = { color: mat.color };
+                    if (type === 'points') {
+                        spec.size = 0.1;
+                        spec.map = mat.map;
+                        spec.morphTargets = mat.morphTargets;
+                        materials[i] = new THREE.PointsMaterial(spec);
+                    } else if (type === 'lines') {
+                        materials[i] = new THREE.LineBasicMaterial(spec);
+                    }
+                });
+            }
+            var filtered = materials.filter(Boolean);
+            if (filtered.length === 1)
+                return filtered[0];
+            return materials;
+        },
+        getMaterialByName(name) {
+            return this.materials.filter(function (m) {
+                return m.name === name;
+            })[0];
+        },
+        duplicateUVs(geometry, materials) {
+            var duplicateUVs = false;
+            if (!Array.isArray(materials)) {
+                if (materials.aoMap)
+                    duplicateUVs = true;
+            } else {
+                materials.forEach(function (material) {
+                    if (material.aoMap)
+                        duplicateUVs = true;
+                });
+            }
+            if (!duplicateUVs)
+                return;
+            geometry.setAttribute('uv2', new THREE.BufferAttribute(geometry.attributes.uv.array, 2));
+        }
+    };
+    function MaterialParser(textureLoader) {
+        this.textureLoader = textureLoader;
+    }
+    MaterialParser.prototype = {
+        constructor: MaterialParser,
+        parse: function () {
+            var materials = [];
+            this.textures = {};
+            for (var name in lwoTree.materials) {
+                if (lwoTree.format === 'LWO3') {
+                    materials.push(this.parseMaterial(lwoTree.materials[name], name, lwoTree.textures));
+                } else if (lwoTree.format === 'LWO2') {
+                    materials.push(this.parseMaterialLwo2(lwoTree.materials[name], name, lwoTree.textures));
+                }
+            }
+            return materials;
+        },
+        parseMaterial(materialData, name, textures) {
+            var params = {
+                name: name,
+                side: this.getSide(materialData.attributes),
+                flatShading: this.getSmooth(materialData.attributes)
+            };
+            var connections = this.parseConnections(materialData.connections, materialData.nodes);
+            var maps = this.parseTextureNodes(connections.maps);
+            this.parseAttributeImageMaps(connections.attributes, textures, maps, materialData.maps);
+            var attributes = this.parseAttributes(connections.attributes, maps);
+            this.parseEnvMap(connections, maps, attributes);
+            params = Object.assign(maps, params);
+            params = Object.assign(params, attributes);
+            var materialType = this.getMaterialType(connections.attributes);
+            return new materialType(params);
+        },
+        parseMaterialLwo2(materialData, name) {
+            var params = {
+                name: name,
+                side: this.getSide(materialData.attributes),
+                flatShading: this.getSmooth(materialData.attributes)
+            };
+            var attributes = this.parseAttributes(materialData.attributes, {});
+            params = Object.assign(params, attributes);
+            return new THREE.MeshPhongMaterial(params);
+        },
+        getSide(attributes) {
+            if (!attributes.side)
+                return THREE.BackSide;
+            switch (attributes.side) {
+            case 0:
+            case 1:
+                return THREE.BackSide;
+            case 2:
+                return THREE.FrontSide;
+            case 3:
+                return THREE.DoubleSide;
+            }
+        },
+        getSmooth(attributes) {
+            if (!attributes.smooth)
+                return true;
+            return !attributes.smooth;
+        },
+        parseConnections(connections, nodes) {
+            var materialConnections = { maps: {} };
+            var inputName = connections.inputName;
+            var inputNodeName = connections.inputNodeName;
+            var nodeName = connections.nodeName;
+            var self = this;
+            inputName.forEach(function (name, index) {
+                if (name === 'Material') {
+                    var matNode = self.getNodeByRefName(inputNodeName[index], nodes);
+                    materialConnections.attributes = matNode.attributes;
+                    materialConnections.envMap = matNode.fileName;
+                    materialConnections.name = inputNodeName[index];
+                }
+            });
+            nodeName.forEach(function (name, index) {
+                if (name === materialConnections.name) {
+                    materialConnections.maps[inputName[index]] = self.getNodeByRefName(inputNodeName[index], nodes);
+                }
+            });
+            return materialConnections;
+        },
+        getNodeByRefName(refName, nodes) {
+            for (var name in nodes) {
+                if (nodes[name].refName === refName)
+                    return nodes[name];
+            }
+        },
+        parseTextureNodes(textureNodes) {
+            var maps = {};
+            for (var name in textureNodes) {
+                var node = textureNodes[name];
+                var path = node.fileName;
+                if (!path)
+                    return;
+                var texture = this.loadTexture(path);
+                if (node.widthWrappingMode !== undefined)
+                    texture.wrapS = this.getWrappingType(node.widthWrappingMode);
+                if (node.heightWrappingMode !== undefined)
+                    texture.wrapT = this.getWrappingType(node.heightWrappingMode);
+                switch (name) {
+                case 'Color':
+                    maps.map = texture;
+                    break;
+                case 'Roughness':
+                    maps.roughnessMap = texture;
+                    maps.roughness = 0.5;
+                    break;
+                case 'Specular':
+                    maps.specularMap = texture;
+                    maps.specular = 16777215;
+                    break;
+                case 'Luminous':
+                    maps.emissiveMap = texture;
+                    maps.emissive = 8421504;
+                    break;
+                case 'Luminous Color':
+                    maps.emissive = 8421504;
+                    break;
+                case 'Metallic':
+                    maps.metalnessMap = texture;
+                    maps.metalness = 0.5;
+                    break;
+                case 'Transparency':
+                case 'Alpha':
+                    maps.alphaMap = texture;
+                    maps.transparent = true;
+                    break;
+                case 'Normal':
+                    maps.normalMap = texture;
+                    if (node.amplitude !== undefined)
+                        maps.normalScale = new THREE.Vector2(node.amplitude, node.amplitude);
+                    break;
+                case 'Bump':
+                    maps.bumpMap = texture;
+                    break;
+                }
+            }
+            if (maps.roughnessMap && maps.specularMap)
+                delete maps.specularMap;
+            return maps;
+        },
+        parseAttributeImageMaps(attributes, textures, maps) {
+            for (var name in attributes) {
+                var attribute = attributes[name];
+                if (attribute.maps) {
+                    var mapData = attribute.maps[0];
+                    var path = this.getTexturePathByIndex(mapData.imageIndex, textures);
+                    if (!path)
+                        return;
+                    var texture = this.loadTexture(path);
+                    if (mapData.wrap !== undefined)
+                        texture.wrapS = this.getWrappingType(mapData.wrap.w);
+                    if (mapData.wrap !== undefined)
+                        texture.wrapT = this.getWrappingType(mapData.wrap.h);
+                    switch (name) {
+                    case 'Color':
+                        maps.map = texture;
+                        break;
+                    case 'Diffuse':
+                        maps.aoMap = texture;
+                        break;
+                    case 'Roughness':
+                        maps.roughnessMap = texture;
+                        maps.roughness = 1;
+                        break;
+                    case 'Specular':
+                        maps.specularMap = texture;
+                        maps.specular = 16777215;
+                        break;
+                    case 'Luminosity':
+                        maps.emissiveMap = texture;
+                        maps.emissive = 8421504;
+                        break;
+                    case 'Metallic':
+                        maps.metalnessMap = texture;
+                        maps.metalness = 1;
+                        break;
+                    case 'Transparency':
+                    case 'Alpha':
+                        maps.alphaMap = texture;
+                        maps.transparent = true;
+                        break;
+                    case 'Normal':
+                        maps.normalMap = texture;
+                        break;
+                    case 'Bump':
+                        maps.bumpMap = texture;
+                        break;
+                    }
+                }
+            }
+        },
+        parseAttributes(attributes, maps) {
+            var params = {};
+            if (attributes.undefined && !maps.map) {
+                params.color = new THREE.Color().fromArray(attributes.undefined.value);
+            } else
+                params.color = new THREE.Color();
+            if (attributes.Transparency && attributes.Transparency.value !== 0) {
+                params.opacity = 1 - attributes.Transparency.value;
+                params.transparent = true;
+            }
+            if (attributes['Bump Height'])
+                params.bumpScale = attributes['Bump Height'].value * 0.1;
+            if (attributes['Refraction Index'])
+                params.refractionRatio = 1 / attributes['Refraction Index'].value;
+            this.parsePhysicalAttributes(params, attributes, maps);
+            this.parseStandardAttributes(params, attributes, maps);
+            this.parsePhongAttributes(params, attributes, maps);
+            return params;
+        },
+        parsePhysicalAttributes(params, attributes) {
+            if (attributes.Clearcoat && attributes.Clearcoat.value > 0) {
+                params.clearcoat = attributes.Clearcoat.value;
+                if (attributes['Clearcoat Gloss']) {
+                    params.clearcoatRoughness = 0.5 * (1 - attributes['Clearcoat Gloss'].value);
+                }
+            }
+        },
+        parseStandardAttributes(params, attributes, maps) {
+            if (attributes.Luminous) {
+                params.emissiveIntensity = attributes.Luminous.value;
+                if (attributes['Luminous Color'] && !maps.emissive) {
+                    params.emissive = new THREE.Color().fromArray(attributes['Luminous Color'].value);
+                } else {
+                    params.emissive = new THREE.Color(8421504);
+                }
+            }
+            if (attributes.Roughness && !maps.roughnessMap)
+                params.roughness = attributes.Roughness.value;
+            if (attributes.Metallic && !maps.metalnessMap)
+                params.metalness = attributes.Metallic.value;
+        },
+        parsePhongAttributes(params, attributes, maps) {
+            if (attributes.Diffuse)
+                params.color.multiplyScalar(attributes.Diffuse.value);
+            if (attributes.Reflection) {
+                params.reflectivity = attributes.Reflection.value;
+                params.combine = THREE.AddOperation;
+            }
+            if (attributes.Luminosity) {
+                params.emissiveIntensity = attributes.Luminosity.value;
+                if (!maps.emissiveMap && !maps.map) {
+                    params.emissive = params.color;
+                } else {
+                    params.emissive = new THREE.Color(8421504);
+                }
+            }
+            if (!attributes.Roughness && attributes.Specular && !maps.specularMap) {
+                if (attributes['Color Highlight']) {
+                    params.specular = new THREE.Color().setScalar(attributes.Specular.value).lerp(params.color.clone().multiplyScalar(attributes.Specular.value), attributes['Color Highlight'].value);
+                } else {
+                    params.specular = new THREE.Color().setScalar(attributes.Specular.value);
+                }
+            }
+            if (params.specular && attributes.Glossiness)
+                params.shininess = 7 + Math.pow(2, attributes.Glossiness.value * 12 + 2);
+        },
+        parseEnvMap(connections, maps, attributes) {
+            if (connections.envMap) {
+                var envMap = this.loadTexture(connections.envMap);
+                if (attributes.transparent && attributes.opacity < 0.999) {
+                    envMap.mapping = THREE.EquirectangularRefractionMapping;
+                    if (attributes.reflectivity !== undefined) {
+                        delete attributes.reflectivity;
+                        delete attributes.combine;
+                    }
+                    if (attributes.metalness !== undefined) {
+                        delete attributes.metalness;
+                    }
+                } else
+                    envMap.mapping = THREE.EquirectangularReflectionMapping;
+                maps.envMap = envMap;
+            }
+        },
+        getTexturePathByIndex(index) {
+            var fileName = '';
+            if (!lwoTree.textures)
+                return fileName;
+            lwoTree.textures.forEach(function (texture) {
+                if (texture.index === index)
+                    fileName = texture.fileName;
+            });
+            return fileName;
+        },
+        loadTexture(path) {
+            if (!path)
+                return null;
+            var texture;
+            texture = this.textureLoader.load(path, undefined, undefined, function () {
+                console.warn('LWOLoader: non-standard resource hierarchy. Use `resourcePath` parameter to specify root content directory.');
+            });
+            return texture;
+        },
+        getWrappingType(num) {
+            switch (num) {
+            case 0:
+                console.warn('LWOLoader: "Reset" texture wrapping type is not supported in three');
+                return THREE.ClampToEdgeWrapping;
+            case 1:
+                return THREE.RepeatWrapping;
+            case 2:
+                return THREE.MirroredRepeatWrapping;
+            case 3:
+                return THREE.ClampToEdgeWrapping;
+            }
+        },
+        getMaterialType(nodeData) {
+            if (nodeData.Clearcoat && nodeData.Clearcoat.value > 0)
+                return THREE.MeshPhysicalMaterial;
+            if (nodeData.Roughness)
+                return THREE.MeshStandardMaterial;
+            return THREE.MeshPhongMaterial;
+        }
+    };
+    function GeometryParser() {
+    }
+    GeometryParser.prototype = {
+        constructor: GeometryParser,
+        parse(geoData, layer) {
+            var geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(geoData.points, 3));
+            var indices = this.splitIndices(geoData.vertexIndices, geoData.polygonDimensions);
+            geometry.setIndex(indices);
+            this.parseGroups(geometry, geoData);
+            geometry.computeVertexNormals();
+            this.parseUVs(geometry, layer, indices);
+            this.parseMorphTargets(geometry, layer, indices);
+            geometry.translate(-layer.pivot[0], -layer.pivot[1], -layer.pivot[2]);
+            return geometry;
+        },
+        splitIndices(indices, polygonDimensions) {
+            var remappedIndices = [];
+            var i = 0;
+            polygonDimensions.forEach(function (dim) {
+                if (dim < 4) {
+                    for (var k = 0; k < dim; k++)
+                        remappedIndices.push(indices[i + k]);
+                } else if (dim === 4) {
+                    remappedIndices.push(indices[i], indices[i + 1], indices[i + 2], indices[i], indices[i + 2], indices[i + 3]);
+                } else if (dim > 4) {
+                    for (var k = 1; k < dim - 1; k++) {
+                        remappedIndices.push(indices[i], indices[i + k], indices[i + k + 1]);
+                    }
+                    console.warn('LWOLoader: polygons with greater than 4 sides are not supported');
+                }
+                i += dim;
+            });
+            return remappedIndices;
+        },
+        parseGroups(geometry, geoData) {
+            var tags = lwoTree.tags;
+            var matNames = [];
+            var elemSize = 3;
+            if (geoData.type === 'lines')
+                elemSize = 2;
+            if (geoData.type === 'points')
+                elemSize = 1;
+            var remappedIndices = this.splitMaterialIndices(geoData.polygonDimensions, geoData.materialIndices);
+            var indexNum = 0;
+            var indexPairs = {};
+            var prevMaterialIndex;
+            var prevStart = 0;
+            var currentCount = 0;
+            for (var i = 0; i < remappedIndices.length; i += 2) {
+                var materialIndex = remappedIndices[i + 1];
+                if (i === 0)
+                    matNames[indexNum] = tags[materialIndex];
+                if (prevMaterialIndex === undefined)
+                    prevMaterialIndex = materialIndex;
+                if (materialIndex !== prevMaterialIndex) {
+                    var currentIndex;
+                    if (indexPairs[tags[prevMaterialIndex]]) {
+                        currentIndex = indexPairs[tags[prevMaterialIndex]];
+                    } else {
+                        currentIndex = indexNum;
+                        indexPairs[tags[prevMaterialIndex]] = indexNum;
+                        matNames[indexNum] = tags[prevMaterialIndex];
+                        indexNum++;
+                    }
+                    geometry.addGroup(prevStart, currentCount, currentIndex);
+                    prevStart += currentCount;
+                    prevMaterialIndex = materialIndex;
+                    currentCount = 0;
+                }
+                currentCount += elemSize;
+            }
+            if (geometry.groups.length > 0) {
+                var currentIndex;
+                if (indexPairs[tags[materialIndex]]) {
+                    currentIndex = indexPairs[tags[materialIndex]];
+                } else {
+                    currentIndex = indexNum;
+                    indexPairs[tags[materialIndex]] = indexNum;
+                    matNames[indexNum] = tags[materialIndex];
+                }
+                geometry.addGroup(prevStart, currentCount, currentIndex);
+            }
+            geometry.userData.matNames = matNames;
+        },
+        splitMaterialIndices(polygonDimensions, indices) {
+            var remappedIndices = [];
+            polygonDimensions.forEach(function (dim, i) {
+                if (dim <= 3) {
+                    remappedIndices.push(indices[i * 2], indices[i * 2 + 1]);
+                } else if (dim === 4) {
+                    remappedIndices.push(indices[i * 2], indices[i * 2 + 1], indices[i * 2], indices[i * 2 + 1]);
+                } else {
+                    for (var k = 0; k < dim - 2; k++) {
+                        remappedIndices.push(indices[i * 2], indices[i * 2 + 1]);
+                    }
+                }
+            });
+            return remappedIndices;
+        },
+        parseUVs(geometry, layer) {
+            var remappedUVs = Array.from(Array(geometry.attributes.position.count * 2), function () {
+                return 0;
+            });
+            for (var name in layer.uvs) {
+                var uvs = layer.uvs[name].uvs;
+                var uvIndices = layer.uvs[name].uvIndices;
+                uvIndices.forEach(function (i, j) {
+                    remappedUVs[i * 2] = uvs[j * 2];
+                    remappedUVs[i * 2 + 1] = uvs[j * 2 + 1];
+                });
+            }
+            geometry.setAttribute('uv', new THREE.Float32BufferAttribute(remappedUVs, 2));
+        },
+        parseMorphTargets(geometry, layer) {
+            var num = 0;
+            for (var name in layer.morphTargets) {
+                var remappedPoints = geometry.attributes.position.array.slice();
+                if (!geometry.morphAttributes.position)
+                    geometry.morphAttributes.position = [];
+                var morphPoints = layer.morphTargets[name].points;
+                var morphIndices = layer.morphTargets[name].indices;
+                var type = layer.morphTargets[name].type;
+                morphIndices.forEach(function (i, j) {
+                    if (type === 'relative') {
+                        remappedPoints[i * 3] += morphPoints[j * 3];
+                        remappedPoints[i * 3 + 1] += morphPoints[j * 3 + 1];
+                        remappedPoints[i * 3 + 2] += morphPoints[j * 3 + 2];
+                    } else {
+                        remappedPoints[i * 3] = morphPoints[j * 3];
+                        remappedPoints[i * 3 + 1] = morphPoints[j * 3 + 1];
+                        remappedPoints[i * 3 + 2] = morphPoints[j * 3 + 2];
+                    }
+                });
+                geometry.morphAttributes.position[num] = new THREE.Float32BufferAttribute(remappedPoints, 3);
+                geometry.morphAttributes.position[num].name = name;
+                num++;
+            }
+            geometry.morphTargetsRelative = false;
+        }
+    };
+    function extractParentUrl(url, dir) {
+        var index = url.indexOf(dir);
+        if (index === -1)
+            return './';
+        return url.substr(0, index);
+    }
+
+    return threex.loaders.LWOLoader = LWOLoader;
+});
+define('skylark-threejs-ex/loaders/MD2Loader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var MD2Loader = function (manager) {
+        THREE.Loader.call(this, manager);
+    };
+    MD2Loader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: MD2Loader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(scope.manager);
+            loader.setPath(scope.path);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, function (buffer) {
+                onLoad(scope.parse(buffer));
+            }, onProgress, onError);
+        },
+        parse: function () {
+            var normalData = [
+                [
+                    -0.525731,
+                    0,
+                    0.850651
+                ],
+                [
+                    -0.442863,
+                    0.238856,
+                    0.864188
+                ],
+                [
+                    -0.295242,
+                    0,
+                    0.955423
+                ],
+                [
+                    -0.309017,
+                    0.5,
+                    0.809017
+                ],
+                [
+                    -0.16246,
+                    0.262866,
+                    0.951056
+                ],
+                [
+                    0,
+                    0,
+                    1
+                ],
+                [
+                    0,
+                    0.850651,
+                    0.525731
+                ],
+                [
+                    -0.147621,
+                    0.716567,
+                    0.681718
+                ],
+                [
+                    0.147621,
+                    0.716567,
+                    0.681718
+                ],
+                [
+                    0,
+                    0.525731,
+                    0.850651
+                ],
+                [
+                    0.309017,
+                    0.5,
+                    0.809017
+                ],
+                [
+                    0.525731,
+                    0,
+                    0.850651
+                ],
+                [
+                    0.295242,
+                    0,
+                    0.955423
+                ],
+                [
+                    0.442863,
+                    0.238856,
+                    0.864188
+                ],
+                [
+                    0.16246,
+                    0.262866,
+                    0.951056
+                ],
+                [
+                    -0.681718,
+                    0.147621,
+                    0.716567
+                ],
+                [
+                    -0.809017,
+                    0.309017,
+                    0.5
+                ],
+                [
+                    -0.587785,
+                    0.425325,
+                    0.688191
+                ],
+                [
+                    -0.850651,
+                    0.525731,
+                    0
+                ],
+                [
+                    -0.864188,
+                    0.442863,
+                    0.238856
+                ],
+                [
+                    -0.716567,
+                    0.681718,
+                    0.147621
+                ],
+                [
+                    -0.688191,
+                    0.587785,
+                    0.425325
+                ],
+                [
+                    -0.5,
+                    0.809017,
+                    0.309017
+                ],
+                [
+                    -0.238856,
+                    0.864188,
+                    0.442863
+                ],
+                [
+                    -0.425325,
+                    0.688191,
+                    0.587785
+                ],
+                [
+                    -0.716567,
+                    0.681718,
+                    -0.147621
+                ],
+                [
+                    -0.5,
+                    0.809017,
+                    -0.309017
+                ],
+                [
+                    -0.525731,
+                    0.850651,
+                    0
+                ],
+                [
+                    0,
+                    0.850651,
+                    -0.525731
+                ],
+                [
+                    -0.238856,
+                    0.864188,
+                    -0.442863
+                ],
+                [
+                    0,
+                    0.955423,
+                    -0.295242
+                ],
+                [
+                    -0.262866,
+                    0.951056,
+                    -0.16246
+                ],
+                [
+                    0,
+                    1,
+                    0
+                ],
+                [
+                    0,
+                    0.955423,
+                    0.295242
+                ],
+                [
+                    -0.262866,
+                    0.951056,
+                    0.16246
+                ],
+                [
+                    0.238856,
+                    0.864188,
+                    0.442863
+                ],
+                [
+                    0.262866,
+                    0.951056,
+                    0.16246
+                ],
+                [
+                    0.5,
+                    0.809017,
+                    0.309017
+                ],
+                [
+                    0.238856,
+                    0.864188,
+                    -0.442863
+                ],
+                [
+                    0.262866,
+                    0.951056,
+                    -0.16246
+                ],
+                [
+                    0.5,
+                    0.809017,
+                    -0.309017
+                ],
+                [
+                    0.850651,
+                    0.525731,
+                    0
+                ],
+                [
+                    0.716567,
+                    0.681718,
+                    0.147621
+                ],
+                [
+                    0.716567,
+                    0.681718,
+                    -0.147621
+                ],
+                [
+                    0.525731,
+                    0.850651,
+                    0
+                ],
+                [
+                    0.425325,
+                    0.688191,
+                    0.587785
+                ],
+                [
+                    0.864188,
+                    0.442863,
+                    0.238856
+                ],
+                [
+                    0.688191,
+                    0.587785,
+                    0.425325
+                ],
+                [
+                    0.809017,
+                    0.309017,
+                    0.5
+                ],
+                [
+                    0.681718,
+                    0.147621,
+                    0.716567
+                ],
+                [
+                    0.587785,
+                    0.425325,
+                    0.688191
+                ],
+                [
+                    0.955423,
+                    0.295242,
+                    0
+                ],
+                [
+                    1,
+                    0,
+                    0
+                ],
+                [
+                    0.951056,
+                    0.16246,
+                    0.262866
+                ],
+                [
+                    0.850651,
+                    -0.525731,
+                    0
+                ],
+                [
+                    0.955423,
+                    -0.295242,
+                    0
+                ],
+                [
+                    0.864188,
+                    -0.442863,
+                    0.238856
+                ],
+                [
+                    0.951056,
+                    -0.16246,
+                    0.262866
+                ],
+                [
+                    0.809017,
+                    -0.309017,
+                    0.5
+                ],
+                [
+                    0.681718,
+                    -0.147621,
+                    0.716567
+                ],
+                [
+                    0.850651,
+                    0,
+                    0.525731
+                ],
+                [
+                    0.864188,
+                    0.442863,
+                    -0.238856
+                ],
+                [
+                    0.809017,
+                    0.309017,
+                    -0.5
+                ],
+                [
+                    0.951056,
+                    0.16246,
+                    -0.262866
+                ],
+                [
+                    0.525731,
+                    0,
+                    -0.850651
+                ],
+                [
+                    0.681718,
+                    0.147621,
+                    -0.716567
+                ],
+                [
+                    0.681718,
+                    -0.147621,
+                    -0.716567
+                ],
+                [
+                    0.850651,
+                    0,
+                    -0.525731
+                ],
+                [
+                    0.809017,
+                    -0.309017,
+                    -0.5
+                ],
+                [
+                    0.864188,
+                    -0.442863,
+                    -0.238856
+                ],
+                [
+                    0.951056,
+                    -0.16246,
+                    -0.262866
+                ],
+                [
+                    0.147621,
+                    0.716567,
+                    -0.681718
+                ],
+                [
+                    0.309017,
+                    0.5,
+                    -0.809017
+                ],
+                [
+                    0.425325,
+                    0.688191,
+                    -0.587785
+                ],
+                [
+                    0.442863,
+                    0.238856,
+                    -0.864188
+                ],
+                [
+                    0.587785,
+                    0.425325,
+                    -0.688191
+                ],
+                [
+                    0.688191,
+                    0.587785,
+                    -0.425325
+                ],
+                [
+                    -0.147621,
+                    0.716567,
+                    -0.681718
+                ],
+                [
+                    -0.309017,
+                    0.5,
+                    -0.809017
+                ],
+                [
+                    0,
+                    0.525731,
+                    -0.850651
+                ],
+                [
+                    -0.525731,
+                    0,
+                    -0.850651
+                ],
+                [
+                    -0.442863,
+                    0.238856,
+                    -0.864188
+                ],
+                [
+                    -0.295242,
+                    0,
+                    -0.955423
+                ],
+                [
+                    -0.16246,
+                    0.262866,
+                    -0.951056
+                ],
+                [
+                    0,
+                    0,
+                    -1
+                ],
+                [
+                    0.295242,
+                    0,
+                    -0.955423
+                ],
+                [
+                    0.16246,
+                    0.262866,
+                    -0.951056
+                ],
+                [
+                    -0.442863,
+                    -0.238856,
+                    -0.864188
+                ],
+                [
+                    -0.309017,
+                    -0.5,
+                    -0.809017
+                ],
+                [
+                    -0.16246,
+                    -0.262866,
+                    -0.951056
+                ],
+                [
+                    0,
+                    -0.850651,
+                    -0.525731
+                ],
+                [
+                    -0.147621,
+                    -0.716567,
+                    -0.681718
+                ],
+                [
+                    0.147621,
+                    -0.716567,
+                    -0.681718
+                ],
+                [
+                    0,
+                    -0.525731,
+                    -0.850651
+                ],
+                [
+                    0.309017,
+                    -0.5,
+                    -0.809017
+                ],
+                [
+                    0.442863,
+                    -0.238856,
+                    -0.864188
+                ],
+                [
+                    0.16246,
+                    -0.262866,
+                    -0.951056
+                ],
+                [
+                    0.238856,
+                    -0.864188,
+                    -0.442863
+                ],
+                [
+                    0.5,
+                    -0.809017,
+                    -0.309017
+                ],
+                [
+                    0.425325,
+                    -0.688191,
+                    -0.587785
+                ],
+                [
+                    0.716567,
+                    -0.681718,
+                    -0.147621
+                ],
+                [
+                    0.688191,
+                    -0.587785,
+                    -0.425325
+                ],
+                [
+                    0.587785,
+                    -0.425325,
+                    -0.688191
+                ],
+                [
+                    0,
+                    -0.955423,
+                    -0.295242
+                ],
+                [
+                    0,
+                    -1,
+                    0
+                ],
+                [
+                    0.262866,
+                    -0.951056,
+                    -0.16246
+                ],
+                [
+                    0,
+                    -0.850651,
+                    0.525731
+                ],
+                [
+                    0,
+                    -0.955423,
+                    0.295242
+                ],
+                [
+                    0.238856,
+                    -0.864188,
+                    0.442863
+                ],
+                [
+                    0.262866,
+                    -0.951056,
+                    0.16246
+                ],
+                [
+                    0.5,
+                    -0.809017,
+                    0.309017
+                ],
+                [
+                    0.716567,
+                    -0.681718,
+                    0.147621
+                ],
+                [
+                    0.525731,
+                    -0.850651,
+                    0
+                ],
+                [
+                    -0.238856,
+                    -0.864188,
+                    -0.442863
+                ],
+                [
+                    -0.5,
+                    -0.809017,
+                    -0.309017
+                ],
+                [
+                    -0.262866,
+                    -0.951056,
+                    -0.16246
+                ],
+                [
+                    -0.850651,
+                    -0.525731,
+                    0
+                ],
+                [
+                    -0.716567,
+                    -0.681718,
+                    -0.147621
+                ],
+                [
+                    -0.716567,
+                    -0.681718,
+                    0.147621
+                ],
+                [
+                    -0.525731,
+                    -0.850651,
+                    0
+                ],
+                [
+                    -0.5,
+                    -0.809017,
+                    0.309017
+                ],
+                [
+                    -0.238856,
+                    -0.864188,
+                    0.442863
+                ],
+                [
+                    -0.262866,
+                    -0.951056,
+                    0.16246
+                ],
+                [
+                    -0.864188,
+                    -0.442863,
+                    0.238856
+                ],
+                [
+                    -0.809017,
+                    -0.309017,
+                    0.5
+                ],
+                [
+                    -0.688191,
+                    -0.587785,
+                    0.425325
+                ],
+                [
+                    -0.681718,
+                    -0.147621,
+                    0.716567
+                ],
+                [
+                    -0.442863,
+                    -0.238856,
+                    0.864188
+                ],
+                [
+                    -0.587785,
+                    -0.425325,
+                    0.688191
+                ],
+                [
+                    -0.309017,
+                    -0.5,
+                    0.809017
+                ],
+                [
+                    -0.147621,
+                    -0.716567,
+                    0.681718
+                ],
+                [
+                    -0.425325,
+                    -0.688191,
+                    0.587785
+                ],
+                [
+                    -0.16246,
+                    -0.262866,
+                    0.951056
+                ],
+                [
+                    0.442863,
+                    -0.238856,
+                    0.864188
+                ],
+                [
+                    0.16246,
+                    -0.262866,
+                    0.951056
+                ],
+                [
+                    0.309017,
+                    -0.5,
+                    0.809017
+                ],
+                [
+                    0.147621,
+                    -0.716567,
+                    0.681718
+                ],
+                [
+                    0,
+                    -0.525731,
+                    0.850651
+                ],
+                [
+                    0.425325,
+                    -0.688191,
+                    0.587785
+                ],
+                [
+                    0.587785,
+                    -0.425325,
+                    0.688191
+                ],
+                [
+                    0.688191,
+                    -0.587785,
+                    0.425325
+                ],
+                [
+                    -0.955423,
+                    0.295242,
+                    0
+                ],
+                [
+                    -0.951056,
+                    0.16246,
+                    0.262866
+                ],
+                [
+                    -1,
+                    0,
+                    0
+                ],
+                [
+                    -0.850651,
+                    0,
+                    0.525731
+                ],
+                [
+                    -0.955423,
+                    -0.295242,
+                    0
+                ],
+                [
+                    -0.951056,
+                    -0.16246,
+                    0.262866
+                ],
+                [
+                    -0.864188,
+                    0.442863,
+                    -0.238856
+                ],
+                [
+                    -0.951056,
+                    0.16246,
+                    -0.262866
+                ],
+                [
+                    -0.809017,
+                    0.309017,
+                    -0.5
+                ],
+                [
+                    -0.864188,
+                    -0.442863,
+                    -0.238856
+                ],
+                [
+                    -0.951056,
+                    -0.16246,
+                    -0.262866
+                ],
+                [
+                    -0.809017,
+                    -0.309017,
+                    -0.5
+                ],
+                [
+                    -0.681718,
+                    0.147621,
+                    -0.716567
+                ],
+                [
+                    -0.681718,
+                    -0.147621,
+                    -0.716567
+                ],
+                [
+                    -0.850651,
+                    0,
+                    -0.525731
+                ],
+                [
+                    -0.688191,
+                    0.587785,
+                    -0.425325
+                ],
+                [
+                    -0.587785,
+                    0.425325,
+                    -0.688191
+                ],
+                [
+                    -0.425325,
+                    0.688191,
+                    -0.587785
+                ],
+                [
+                    -0.425325,
+                    -0.688191,
+                    -0.587785
+                ],
+                [
+                    -0.587785,
+                    -0.425325,
+                    -0.688191
+                ],
+                [
+                    -0.688191,
+                    -0.587785,
+                    -0.425325
+                ]
+            ];
+            return function (buffer) {
+                var data = new DataView(buffer);
+                var header = {};
+                var headerNames = [
+                    'ident',
+                    'version',
+                    'skinwidth',
+                    'skinheight',
+                    'framesize',
+                    'num_skins',
+                    'num_vertices',
+                    'num_st',
+                    'num_tris',
+                    'num_glcmds',
+                    'num_frames',
+                    'offset_skins',
+                    'offset_st',
+                    'offset_tris',
+                    'offset_frames',
+                    'offset_glcmds',
+                    'offset_end'
+                ];
+                for (var i = 0; i < headerNames.length; i++) {
+                    header[headerNames[i]] = data.getInt32(i * 4, true);
+                }
+                if (header.ident !== 844121161 || header.version !== 8) {
+                    console.error('Not a valid MD2 file');
+                    return;
+                }
+                if (header.offset_end !== data.byteLength) {
+                    console.error('Corrupted MD2 file');
+                    return;
+                }
+                var geometry = new THREE.BufferGeometry();
+                var uvsTemp = [];
+                var offset = header.offset_st;
+                for (var i = 0, l = header.num_st; i < l; i++) {
+                    var u = data.getInt16(offset + 0, true);
+                    var v = data.getInt16(offset + 2, true);
+                    uvsTemp.push(u / header.skinwidth, 1 - v / header.skinheight);
+                    offset += 4;
+                }
+                offset = header.offset_tris;
+                var vertexIndices = [];
+                var uvIndices = [];
+                for (var i = 0, l = header.num_tris; i < l; i++) {
+                    vertexIndices.push(data.getUint16(offset + 0, true), data.getUint16(offset + 2, true), data.getUint16(offset + 4, true));
+                    uvIndices.push(data.getUint16(offset + 6, true), data.getUint16(offset + 8, true), data.getUint16(offset + 10, true));
+                    offset += 12;
+                }
+                var translation = new THREE.Vector3();
+                var scale = new THREE.Vector3();
+                var string = [];
+                var frames = [];
+                offset = header.offset_frames;
+                for (var i = 0, l = header.num_frames; i < l; i++) {
+                    scale.set(data.getFloat32(offset + 0, true), data.getFloat32(offset + 4, true), data.getFloat32(offset + 8, true));
+                    translation.set(data.getFloat32(offset + 12, true), data.getFloat32(offset + 16, true), data.getFloat32(offset + 20, true));
+                    offset += 24;
+                    for (var j = 0; j < 16; j++) {
+                        var character = data.getUint8(offset + j, true);
+                        if (character === 0)
+                            break;
+                        string[j] = character;
+                    }
+                    var frame = {
+                        name: String.fromCharCode.apply(null, string),
+                        vertices: [],
+                        normals: []
+                    };
+                    offset += 16;
+                    for (var j = 0; j < header.num_vertices; j++) {
+                        var x = data.getUint8(offset++, true);
+                        var y = data.getUint8(offset++, true);
+                        var z = data.getUint8(offset++, true);
+                        var n = normalData[data.getUint8(offset++, true)];
+                        x = x * scale.x + translation.x;
+                        y = y * scale.y + translation.y;
+                        z = z * scale.z + translation.z;
+                        frame.vertices.push(x, z, y);
+                        frame.normals.push(n[0], n[2], n[1]);
+                    }
+                    frames.push(frame);
+                }
+                var positions = [];
+                var normals = [];
+                var uvs = [];
+                var verticesTemp = frames[0].vertices;
+                var normalsTemp = frames[0].normals;
+                for (var i = 0, l = vertexIndices.length; i < l; i++) {
+                    var vertexIndex = vertexIndices[i];
+                    var stride = vertexIndex * 3;
+                    var x = verticesTemp[stride];
+                    var y = verticesTemp[stride + 1];
+                    var z = verticesTemp[stride + 2];
+                    positions.push(x, y, z);
+                    var nx = normalsTemp[stride];
+                    var ny = normalsTemp[stride + 1];
+                    var nz = normalsTemp[stride + 2];
+                    normals.push(nx, ny, nz);
+                    var uvIndex = uvIndices[i];
+                    stride = uvIndex * 2;
+                    var u = uvsTemp[stride];
+                    var v = uvsTemp[stride + 1];
+                    uvs.push(u, v);
+                }
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+                geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                var morphPositions = [];
+                var morphNormals = [];
+                for (var i = 0, l = frames.length; i < l; i++) {
+                    var frame = frames[i];
+                    var attributeName = frame.name;
+                    if (frame.vertices.length > 0) {
+                        var positions = [];
+                        for (var j = 0, jl = vertexIndices.length; j < jl; j++) {
+                            var vertexIndex = vertexIndices[j];
+                            var stride = vertexIndex * 3;
+                            var x = frame.vertices[stride];
+                            var y = frame.vertices[stride + 1];
+                            var z = frame.vertices[stride + 2];
+                            positions.push(x, y, z);
+                        }
+                        var positionAttribute = new THREE.Float32BufferAttribute(positions, 3);
+                        positionAttribute.name = attributeName;
+                        morphPositions.push(positionAttribute);
+                    }
+                    if (frame.normals.length > 0) {
+                        var normals = [];
+                        for (var j = 0, jl = vertexIndices.length; j < jl; j++) {
+                            var vertexIndex = vertexIndices[j];
+                            var stride = vertexIndex * 3;
+                            var nx = frame.normals[stride];
+                            var ny = frame.normals[stride + 1];
+                            var nz = frame.normals[stride + 2];
+                            normals.push(nx, ny, nz);
+                        }
+                        var normalAttribute = new THREE.Float32BufferAttribute(normals, 3);
+                        normalAttribute.name = attributeName;
+                        morphNormals.push(normalAttribute);
+                    }
+                }
+                geometry.morphAttributes.position = morphPositions;
+                geometry.morphAttributes.normal = morphNormals;
+                geometry.morphTargetsRelative = false;
+                geometry.animations = THREE.AnimationClip.CreateClipsFromMorphTargetSequences(frames, 10);
+                return geometry;
+            };
+        }()
+    });
+
+    return threex.loaders.MD2Loader = MD2Loader;
+});
+define('skylark-threejs-ex/loaders/MDDLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var MDDLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+    };
+    MDDLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: MDDLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(this.manager);
+            loader.setPath(this.path);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, function (data) {
+                onLoad(scope.parse(data));
+            }, onProgress, onError);
+        },
+        parse: function (data) {
+            var view = new DataView(data);
+            var totalFrames = view.getUint32(0);
+            var totalPoints = view.getUint32(4);
+            var offset = 8;
+            var times = new Float32Array(totalFrames);
+            var values = new Float32Array(totalFrames * totalFrames).fill(0);
+            for (var i = 0; i < totalFrames; i++) {
+                times[i] = view.getFloat32(offset);
+                offset += 4;
+                values[totalFrames * i + i] = 1;
+            }
+            var track = new THREE.NumberKeyframeTrack('.morphTargetInfluences', times, values);
+            var clip = new THREE.AnimationClip('default', times[times.length - 1], [track]);
+            var morphTargets = [];
+            for (var i = 0; i < totalFrames; i++) {
+                var morphTarget = new Float32Array(totalPoints * 3);
+                for (var j = 0; j < totalPoints; j++) {
+                    var stride = j * 3;
+                    morphTarget[stride + 0] = view.getFloat32(offset);
+                    offset += 4;
+                    morphTarget[stride + 1] = view.getFloat32(offset);
+                    offset += 4;
+                    morphTarget[stride + 2] = view.getFloat32(offset);
+                    offset += 4;
+                }
+                var attribute = new THREE.BufferAttribute(morphTarget, 3);
+                attribute.name = 'morph_' + i;
+                morphTargets.push(attribute);
+            }
+            return {
+                morphTargets: morphTargets,
+                clip: clip
+            };
+        }
+    });
+
+    return threex.loaders.MDDLoader = MDDLoader;
+});
+define('skylark-threejs-ex/loaders/MMDLoader',[
+    "skylark-threejs",
+    "../threex",
+    '../loaders/TGALoader',
+    '../utils/mmdparser'
+], function (
+    THREE, 
+    threex,
+    TGALoader, 
+    MMDParser
+) {
+    'use strict';
+    var MMDLoader = function () {
+        function MMDLoader(manager) {
+             THREE.Loader.call(this, manager);
+            this.loader = new  THREE.FileLoader(this.manager);
+            this.parser = null;
+            this.meshBuilder = new MeshBuilder(this.manager);
+            this.animationBuilder = new AnimationBuilder();
+        }
+        MMDLoader.prototype = Object.assign(Object.create( THREE.Loader.prototype), {
+            constructor: MMDLoader,
+            setAnimationPath: function (animationPath) {
+                this.animationPath = animationPath;
+                return this;
+            },
+            load: function (url, onLoad, onProgress, onError) {
+                var builder = this.meshBuilder.setCrossOrigin(this.crossOrigin);
+                var resourcePath;
+                if (this.resourcePath !== '') {
+                    resourcePath = this.resourcePath;
+                } else if (this.path !== '') {
+                    resourcePath = this.path;
+                } else {
+                    resourcePath =  THREE.LoaderUtils.extractUrlBase(url);
+                }
+                var modelExtension = this._extractExtension(url).toLowerCase();
+                if (modelExtension !== 'pmd' && modelExtension !== 'pmx') {
+                    if (onError)
+                        onError(new Error('THREE.MMDLoader: Unknown model file extension .' + modelExtension + '.'));
+                    return;
+                }
+                this[modelExtension === 'pmd' ? 'loadPMD' : 'loadPMX'](url, function (data) {
+                    onLoad(builder.build(data, resourcePath, onProgress, onError));
+                }, onProgress, onError);
+            },
+            loadAnimation: function (url, object, onLoad, onProgress, onError) {
+                var builder = this.animationBuilder;
+                this.loadVMD(url, function (vmd) {
+                    onLoad(object.isCamera ? builder.buildCameraAnimation(vmd) : builder.build(vmd, object));
+                }, onProgress, onError);
+            },
+            loadWithAnimation: function (modelUrl, vmdUrl, onLoad, onProgress, onError) {
+                var scope = this;
+                this.load(modelUrl, function (mesh) {
+                    scope.loadAnimation(vmdUrl, mesh, function (animation) {
+                        onLoad({
+                            mesh: mesh,
+                            animation: animation
+                        });
+                    }, onProgress, onError);
+                }, onProgress, onError);
+            },
+            loadPMD: function (url, onLoad, onProgress, onError) {
+                var parser = this._getParser();
+                this.loader.setMimeType(undefined).setPath(this.path).setResponseType('arraybuffer').load(url, function (buffer) {
+                    onLoad(parser.parsePmd(buffer, true));
+                }, onProgress, onError);
+            },
+            loadPMX: function (url, onLoad, onProgress, onError) {
+                var parser = this._getParser();
+                this.loader.setMimeType(undefined).setPath(this.path).setResponseType('arraybuffer').load(url, function (buffer) {
+                    onLoad(parser.parsePmx(buffer, true));
+                }, onProgress, onError);
+            },
+            loadVMD: function (url, onLoad, onProgress, onError) {
+                var urls = Array.isArray(url) ? url : [url];
+                var vmds = [];
+                var vmdNum = urls.length;
+                var parser = this._getParser();
+                this.loader.setMimeType(undefined).setPath(this.animationPath).setResponseType('arraybuffer');
+                for (var i = 0, il = urls.length; i < il; i++) {
+                    this.loader.load(urls[i], function (buffer) {
+                        vmds.push(parser.parseVmd(buffer, true));
+                        if (vmds.length === vmdNum)
+                            onLoad(parser.mergeVmds(vmds));
+                    }, onProgress, onError);
+                }
+            },
+            loadVPD: function (url, isUnicode, onLoad, onProgress, onError) {
+                var parser = this._getParser();
+                this.loader.setMimeType(isUnicode ? undefined : 'text/plain; charset=shift_jis').setPath(this.animationPath).setResponseType('text').load(url, function (text) {
+                    onLoad(parser.parseVpd(text, true));
+                }, onProgress, onError);
+            },
+            _extractExtension: function (url) {
+                var index = url.lastIndexOf('.');
+                return index < 0 ? '' : url.slice(index + 1);
+            },
+            _getParser: function () {
+                if (this.parser === null) {
+                    if (typeof MMDParser === 'undefined') {
+                        throw new Error('THREE.MMDLoader: Import MMDParser https://github.com/takahirox/mmd-parser');
+                    }
+                    this.parser = new MMDParser.Parser();
+                }
+                return this.parser;
+            }
+        });
+        var DEFAULT_TOON_TEXTURES = [
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAL0lEQVRYR+3QQREAAAzCsOFfNJPBJ1XQS9r2hsUAAQIECBAgQIAAAQIECBAgsBZ4MUx/ofm2I/kAAAAASUVORK5CYII=',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAN0lEQVRYR+3WQREAMBACsZ5/bWiiMvgEBTt5cW37hjsBBAgQIECAwFwgyfYPCCBAgAABAgTWAh8aBHZBl14e8wAAAABJRU5ErkJggg==',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAOUlEQVRYR+3WMREAMAwDsYY/yoDI7MLwIiP40+RJklfcCCBAgAABAgTqArfb/QMCCBAgQIAAgbbAB3z/e0F3js2cAAAAAElFTkSuQmCC',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAN0lEQVRYR+3WQREAMBACsZ5/B5ilMvgEBTt5cW37hjsBBAgQIECAwFwgyfYPCCBAgAABAgTWAh81dWyx0gFwKAAAAABJRU5ErkJggg==',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAOklEQVRYR+3WoREAMAwDsWb/UQtCy9wxTOQJ/oQ8SXKKGwEECBAgQIBAXeDt7f4BAQQIECBAgEBb4AOz8Hzx7WLY4wAAAABJRU5ErkJggg==',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABPUlEQVRYR+1XwW7CMAy1+f9fZOMysSEOEweEOPRNdm3HbdOyIhAcklPrOs/PLy9RygBALxzcCDQFmgJNgaZAU6Ap0BR4PwX8gsRMVLssMRH5HcpzJEaWL7EVg9F1IHRlyqQohgVr4FGUlUcMJSjcUlDw0zvjeun70cLWmneoyf7NgBTQSniBTQQSuJAZsOnnaczjIMb5hCiuHKxokCrJfVnrctyZL0PkJAJe1HMil4nxeyi3Ypfn1kX51jpPvo/JeCNC4PhVdHdJw2XjBR8brF8PEIhNVn12AgP7uHsTBguBn53MUZCqv7Lp07Pn5k1Ro+uWmUNn7D+M57rtk7aG0Vo73xyF/fbFf0bPJjDXngnGocDTdFhygZjwUQrMNrDcmZlQT50VJ/g/UwNyHpu778+yW+/ksOz/BFo54P4AsUXMfRq7XWsAAAAASUVORK5CYII=',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAACMElEQVRYR+2Xv4pTQRTGf2dubhLdICiii2KnYKHVolhauKWPoGAnNr6BD6CvIVaihYuI2i1ia0BY0MZGRHQXjZj/mSPnnskfNWiWZUlzJ5k7M2cm833nO5Mziej2DWWJRUoCpQKlAntSQCqgw39/iUWAGmh37jrRnVsKlgpiqmkoGVABA7E57fvY+pJDdgKqF6HzFCSADkDq+F6AHABtQ+UMVE5D7zXod7fFNhTEckTbj5XQgHzNN+5tQvc5NG7C6BNkp6D3EmpXHDR+dQAjFLchW3VS9rlw3JBh+B7ys5Cf9z0GW1C/7P32AyBAOAz1q4jGliIH3YPuBnSfQX4OGreTIgEYQb/pBDtPnEQ4CivXYPAWBk13oHrB54yA9QuSn2H4AcKRpEILDt0BUzj+RLR1V5EqjD66NPRBVpLcQwjHoHYJOhsQv6U4mnzmrIXJCFr4LDwm/xBUoboG9XX4cc9VKdYoSA2yk5NQLJaKDUjTBoveG3Z2TElTxwjNK4M3LEZgUdDdruvcXzKBpStgp2NPiWi3ks9ZXxIoFVi+AvHLdc9TqtjL3/aYjpPlrzOcEnK62Szhimdd7xX232zFDTgtxezOu3WNMRLjiKgjtOhHVMd1loynVHvOgjuIIJMaELEqhJAV/RCSLbWTcfPFakFgFlALTRRvx+ok6Hlp/Q+v3fmx90bMyUzaEAhmM3KvHlXTL5DxnbGf/1M8RNNACLL5MNtPxP/mypJAqcDSFfgFhpYqWUzhTEAAAAAASUVORK5CYII=',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAL0lEQVRYR+3QQREAAAzCsOFfNJPBJ1XQS9r2hsUAAQIECBAgQIAAAQIECBAgsBZ4MUx/ofm2I/kAAAAASUVORK5CYII=',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAL0lEQVRYR+3QQREAAAzCsOFfNJPBJ1XQS9r2hsUAAQIECBAgQIAAAQIECBAgsBZ4MUx/ofm2I/kAAAAASUVORK5CYII=',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAL0lEQVRYR+3QQREAAAzCsOFfNJPBJ1XQS9r2hsUAAQIECBAgQIAAAQIECBAgsBZ4MUx/ofm2I/kAAAAASUVORK5CYII=',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAL0lEQVRYR+3QQREAAAzCsOFfNJPBJ1XQS9r2hsUAAQIECBAgQIAAAQIECBAgsBZ4MUx/ofm2I/kAAAAASUVORK5CYII='
+        ];
+        function MeshBuilder(manager) {
+            this.geometryBuilder = new GeometryBuilder();
+            this.materialBuilder = new MaterialBuilder(manager);
+        }
+        MeshBuilder.prototype = {
+            constructor: MeshBuilder,
+            crossOrigin: 'anonymous',
+            setCrossOrigin: function (crossOrigin) {
+                this.crossOrigin = crossOrigin;
+                return this;
+            },
+            build: function (data, resourcePath, onProgress, onError) {
+                var geometry = this.geometryBuilder.build(data);
+                var material = this.materialBuilder.setCrossOrigin(this.crossOrigin).setResourcePath(resourcePath).build(data, geometry, onProgress, onError);
+                var mesh = new  THREE.SkinnedMesh(geometry, material);
+                var skeleton = new  THREE.Skeleton(initBones(mesh));
+                mesh.bind(skeleton);
+                return mesh;
+            }
+        };
+        function initBones(mesh) {
+            var geometry = mesh.geometry;
+            var bones = [], bone, gbone;
+            var i, il;
+            if (geometry && geometry.bones !== undefined) {
+                for (i = 0, il = geometry.bones.length; i < il; i++) {
+                    gbone = geometry.bones[i];
+                    bone = new  THREE.Bone();
+                    bones.push(bone);
+                    bone.name = gbone.name;
+                    bone.position.fromArray(gbone.pos);
+                    bone.quaternion.fromArray(gbone.rotq);
+                    if (gbone.scl !== undefined)
+                        bone.scale.fromArray(gbone.scl);
+                }
+                for (i = 0, il = geometry.bones.length; i < il; i++) {
+                    gbone = geometry.bones[i];
+                    if (gbone.parent !== -1 && gbone.parent !== null && bones[gbone.parent] !== undefined) {
+                        bones[gbone.parent].add(bones[i]);
+                    } else {
+                        mesh.add(bones[i]);
+                    }
+                }
+            }
+            mesh.updateMatrixWorld(true);
+            return bones;
+        }
+        function GeometryBuilder() {
+        }
+        GeometryBuilder.prototype = {
+            constructor: GeometryBuilder,
+            build: function (data) {
+                var positions = [];
+                var uvs = [];
+                var normals = [];
+                var indices = [];
+                var groups = [];
+                var bones = [];
+                var skinIndices = [];
+                var skinWeights = [];
+                var morphTargets = [];
+                var morphPositions = [];
+                var iks = [];
+                var grants = [];
+                var rigidBodies = [];
+                var constraints = [];
+                var offset = 0;
+                var boneTypeTable = {};
+                for (var i = 0; i < data.metadata.vertexCount; i++) {
+                    var v = data.vertices[i];
+                    for (var j = 0, jl = v.position.length; j < jl; j++) {
+                        positions.push(v.position[j]);
+                    }
+                    for (var j = 0, jl = v.normal.length; j < jl; j++) {
+                        normals.push(v.normal[j]);
+                    }
+                    for (var j = 0, jl = v.uv.length; j < jl; j++) {
+                        uvs.push(v.uv[j]);
+                    }
+                    for (var j = 0; j < 4; j++) {
+                        skinIndices.push(v.skinIndices.length - 1 >= j ? v.skinIndices[j] : 0);
+                    }
+                    for (var j = 0; j < 4; j++) {
+                        skinWeights.push(v.skinWeights.length - 1 >= j ? v.skinWeights[j] : 0);
+                    }
+                }
+                for (var i = 0; i < data.metadata.faceCount; i++) {
+                    var face = data.faces[i];
+                    for (var j = 0, jl = face.indices.length; j < jl; j++) {
+                        indices.push(face.indices[j]);
+                    }
+                }
+                for (var i = 0; i < data.metadata.materialCount; i++) {
+                    var material = data.materials[i];
+                    groups.push({
+                        offset: offset * 3,
+                        count: material.faceCount * 3
+                    });
+                    offset += material.faceCount;
+                }
+                for (var i = 0; i < data.metadata.rigidBodyCount; i++) {
+                    var body = data.rigidBodies[i];
+                    var value = boneTypeTable[body.boneIndex];
+                    value = value === undefined ? body.type : Math.max(body.type, value);
+                    boneTypeTable[body.boneIndex] = value;
+                }
+                for (var i = 0; i < data.metadata.boneCount; i++) {
+                    var boneData = data.bones[i];
+                    var bone = {
+                        parent: boneData.parentIndex,
+                        name: boneData.name,
+                        pos: boneData.position.slice(0, 3),
+                        rotq: [
+                            0,
+                            0,
+                            0,
+                            1
+                        ],
+                        scl: [
+                            1,
+                            1,
+                            1
+                        ],
+                        rigidBodyType: boneTypeTable[i] !== undefined ? boneTypeTable[i] : -1
+                    };
+                    if (bone.parent !== -1) {
+                        bone.pos[0] -= data.bones[bone.parent].position[0];
+                        bone.pos[1] -= data.bones[bone.parent].position[1];
+                        bone.pos[2] -= data.bones[bone.parent].position[2];
+                    }
+                    bones.push(bone);
+                }
+                if (data.metadata.format === 'pmd') {
+                    for (var i = 0; i < data.metadata.ikCount; i++) {
+                        var ik = data.iks[i];
+                        var param = {
+                            target: ik.target,
+                            effector: ik.effector,
+                            iteration: ik.iteration,
+                            maxAngle: ik.maxAngle * 4,
+                            links: []
+                        };
+                        for (var j = 0, jl = ik.links.length; j < jl; j++) {
+                            var link = {};
+                            link.index = ik.links[j].index;
+                            link.enabled = true;
+                            if (data.bones[link.index].name.indexOf('ひざ') >= 0) {
+                                link.limitation = new  THREE.Vector3(1, 0, 0);
+                            }
+                            param.links.push(link);
+                        }
+                        iks.push(param);
+                    }
+                } else {
+                    for (var i = 0; i < data.metadata.boneCount; i++) {
+                        var ik = data.bones[i].ik;
+                        if (ik === undefined)
+                            continue;
+                        var param = {
+                            target: i,
+                            effector: ik.effector,
+                            iteration: ik.iteration,
+                            maxAngle: ik.maxAngle,
+                            links: []
+                        };
+                        for (var j = 0, jl = ik.links.length; j < jl; j++) {
+                            var link = {};
+                            link.index = ik.links[j].index;
+                            link.enabled = true;
+                            if (ik.links[j].angleLimitation === 1) {
+                                var rotationMin = ik.links[j].lowerLimitationAngle;
+                                var rotationMax = ik.links[j].upperLimitationAngle;
+                                var tmp1 = -rotationMax[0];
+                                var tmp2 = -rotationMax[1];
+                                rotationMax[0] = -rotationMin[0];
+                                rotationMax[1] = -rotationMin[1];
+                                rotationMin[0] = tmp1;
+                                rotationMin[1] = tmp2;
+                                link.rotationMin = new  THREE.Vector3().fromArray(rotationMin);
+                                link.rotationMax = new  THREE.Vector3().fromArray(rotationMax);
+                            }
+                            param.links.push(link);
+                        }
+                        iks.push(param);
+                    }
+                }
+                if (data.metadata.format === 'pmx') {
+                    for (var i = 0; i < data.metadata.boneCount; i++) {
+                        var boneData = data.bones[i];
+                        var grant = boneData.grant;
+                        if (grant === undefined)
+                            continue;
+                        var param = {
+                            index: i,
+                            parentIndex: grant.parentIndex,
+                            ratio: grant.ratio,
+                            isLocal: grant.isLocal,
+                            affectRotation: grant.affectRotation,
+                            affectPosition: grant.affectPosition,
+                            transformationClass: boneData.transformationClass
+                        };
+                        grants.push(param);
+                    }
+                    grants.sort(function (a, b) {
+                        return a.transformationClass - b.transformationClass;
+                    });
+                }
+                function updateAttributes(attribute, morph, ratio) {
+                    for (var i = 0; i < morph.elementCount; i++) {
+                        var element = morph.elements[i];
+                        var index;
+                        if (data.metadata.format === 'pmd') {
+                            index = data.morphs[0].elements[element.index].index;
+                        } else {
+                            index = element.index;
+                        }
+                        attribute.array[index * 3 + 0] += element.position[0] * ratio;
+                        attribute.array[index * 3 + 1] += element.position[1] * ratio;
+                        attribute.array[index * 3 + 2] += element.position[2] * ratio;
+                    }
+                }
+                for (var i = 0; i < data.metadata.morphCount; i++) {
+                    var morph = data.morphs[i];
+                    var params = { name: morph.name };
+                    var attribute = new  THREE.Float32BufferAttribute(data.metadata.vertexCount * 3, 3);
+                    attribute.name = morph.name;
+                    for (var j = 0; j < data.metadata.vertexCount * 3; j++) {
+                        attribute.array[j] = positions[j];
+                    }
+                    if (data.metadata.format === 'pmd') {
+                        if (i !== 0) {
+                            updateAttributes(attribute, morph, 1);
+                        }
+                    } else {
+                        if (morph.type === 0) {
+                            for (var j = 0; j < morph.elementCount; j++) {
+                                var morph2 = data.morphs[morph.elements[j].index];
+                                var ratio = morph.elements[j].ratio;
+                                if (morph2.type === 1) {
+                                    updateAttributes(attribute, morph2, ratio);
+                                } else {
+                                }
+                            }
+                        } else if (morph.type === 1) {
+                            updateAttributes(attribute, morph, 1);
+                        } else if (morph.type === 2) {
+                        } else if (morph.type === 3) {
+                        } else if (morph.type === 4) {
+                        } else if (morph.type === 5) {
+                        } else if (morph.type === 6) {
+                        } else if (morph.type === 7) {
+                        } else if (morph.type === 8) {
+                        }
+                    }
+                    morphTargets.push(params);
+                    morphPositions.push(attribute);
+                }
+                for (var i = 0; i < data.metadata.rigidBodyCount; i++) {
+                    var rigidBody = data.rigidBodies[i];
+                    var params = {};
+                    for (var key in rigidBody) {
+                        params[key] = rigidBody[key];
+                    }
+                    if (data.metadata.format === 'pmx') {
+                        if (params.boneIndex !== -1) {
+                            var bone = data.bones[params.boneIndex];
+                            params.position[0] -= bone.position[0];
+                            params.position[1] -= bone.position[1];
+                            params.position[2] -= bone.position[2];
+                        }
+                    }
+                    rigidBodies.push(params);
+                }
+                for (var i = 0; i < data.metadata.constraintCount; i++) {
+                    var constraint = data.constraints[i];
+                    var params = {};
+                    for (var key in constraint) {
+                        params[key] = constraint[key];
+                    }
+                    var bodyA = rigidBodies[params.rigidBodyIndex1];
+                    var bodyB = rigidBodies[params.rigidBodyIndex2];
+                    if (bodyA.type !== 0 && bodyB.type === 2) {
+                        if (bodyA.boneIndex !== -1 && bodyB.boneIndex !== -1 && data.bones[bodyB.boneIndex].parentIndex === bodyA.boneIndex) {
+                            bodyB.type = 1;
+                        }
+                    }
+                    constraints.push(params);
+                }
+                var geometry = new  THREE.BufferGeometry();
+                geometry.setAttribute('position', new  THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('normal', new  THREE.Float32BufferAttribute(normals, 3));
+                geometry.setAttribute('uv', new  THREE.Float32BufferAttribute(uvs, 2));
+                geometry.setAttribute('skinIndex', new  THREE.Uint16BufferAttribute(skinIndices, 4));
+                geometry.setAttribute('skinWeight', new  THREE.Float32BufferAttribute(skinWeights, 4));
+                geometry.setIndex(indices);
+                for (var i = 0, il = groups.length; i < il; i++) {
+                    geometry.addGroup(groups[i].offset, groups[i].count, i);
+                }
+                geometry.bones = bones;
+                geometry.morphTargets = morphTargets;
+                geometry.morphAttributes.position = morphPositions;
+                geometry.morphTargetsRelative = false;
+                geometry.userData.MMD = {
+                    bones: bones,
+                    iks: iks,
+                    grants: grants,
+                    rigidBodies: rigidBodies,
+                    constraints: constraints,
+                    format: data.metadata.format
+                };
+                geometry.computeBoundingSphere();
+                return geometry;
+            }
+        };
+        function MaterialBuilder(manager) {
+            this.manager = manager;
+            this.textureLoader = new  THREE.TextureLoader(this.manager);
+            this.tgaLoader = null;
+        }
+        MaterialBuilder.prototype = {
+            constructor: MaterialBuilder,
+            crossOrigin: 'anonymous',
+            resourcePath: undefined,
+            setCrossOrigin: function (crossOrigin) {
+                this.crossOrigin = crossOrigin;
+                return this;
+            },
+            setResourcePath: function (resourcePath) {
+                this.resourcePath = resourcePath;
+                return this;
+            },
+            build: function (data, geometry) {
+                var materials = [];
+                var textures = {};
+                this.textureLoader.setCrossOrigin(this.crossOrigin);
+                for (var i = 0; i < data.metadata.materialCount; i++) {
+                    var material = data.materials[i];
+                    var params = { userData: {} };
+                    if (material.name !== undefined)
+                        params.name = material.name;
+                    params.color = new  THREE.Color().fromArray(material.diffuse);
+                    params.opacity = material.diffuse[3];
+                    params.specular = new  THREE.Color().fromArray(material.specular);
+                    params.emissive = new  THREE.Color().fromArray(material.ambient);
+                    params.shininess = Math.max(material.shininess, 0.0001);
+                    params.transparent = params.opacity !== 1;
+                    params.skinning = geometry.bones.length > 0 ? true : false;
+                    params.morphTargets = geometry.morphTargets.length > 0 ? true : false;
+                    params.fog = true;
+                    params.blending =  THREE.CustomBlending;
+                    params.blendSrc =  THREE.SrcAlphaFactor;
+                    params.blendDst =  THREE.OneMinusSrcAlphaFactor;
+                    params.blendSrcAlpha =  THREE.SrcAlphaFactor;
+                    params.blendDstAlpha =  THREE.DstAlphaFactor;
+                    if (data.metadata.format === 'pmx' && (material.flag & 1) === 1) {
+                        params.side =  THREE.DoubleSide;
+                    } else {
+                        params.side = params.opacity === 1 ?  THREE.FrontSide :  THREE.DoubleSide;
+                    }
+                    if (data.metadata.format === 'pmd') {
+                        if (material.fileName) {
+                            var fileName = material.fileName;
+                            var fileNames = fileName.split('*');
+                            params.map = this._loadTexture(fileNames[0], textures);
+                            if (fileNames.length > 1) {
+                                var extension = fileNames[1].slice(-4).toLowerCase();
+                                params.envMap = this._loadTexture(fileNames[1], textures, { sphericalReflectionMapping: true });
+                                params.combine = extension === '.sph' ?  THREE.MultiplyOperation :  THREE.AddOperation;
+                            }
+                        }
+                        var toonFileName = material.toonIndex === -1 ? 'toon00.bmp' : data.toonTextures[material.toonIndex].fileName;
+                        params.gradientMap = this._loadTexture(toonFileName, textures, {
+                            isToonTexture: true,
+                            isDefaultToonTexture: this._isDefaultToonTexture(toonFileName)
+                        });
+                        params.userData.outlineParameters = {
+                            thickness: material.edgeFlag === 1 ? 0.003 : 0,
+                            color: [
+                                0,
+                                0,
+                                0
+                            ],
+                            alpha: 1,
+                            visible: material.edgeFlag === 1
+                        };
+                    } else {
+                        if (material.textureIndex !== -1) {
+                            params.map = this._loadTexture(data.textures[material.textureIndex], textures);
+                        }
+                        if (material.envTextureIndex !== -1 && (material.envFlag === 1 || material.envFlag == 2)) {
+                            params.envMap = this._loadTexture(data.textures[material.envTextureIndex], textures, { sphericalReflectionMapping: true });
+                            params.combine = material.envFlag === 1 ?  THREE.MultiplyOperation :  THREE.AddOperation;
+                        }
+                        var toonFileName, isDefaultToon;
+                        if (material.toonIndex === -1 || material.toonFlag !== 0) {
+                            toonFileName = 'toon' + ('0' + (material.toonIndex + 1)).slice(-2) + '.bmp';
+                            isDefaultToon = true;
+                        } else {
+                            toonFileName = data.textures[material.toonIndex];
+                            isDefaultToon = false;
+                        }
+                        params.gradientMap = this._loadTexture(toonFileName, textures, {
+                            isToonTexture: true,
+                            isDefaultToonTexture: isDefaultToon
+                        });
+                        params.userData.outlineParameters = {
+                            thickness: material.edgeSize / 300,
+                            color: material.edgeColor.slice(0, 3),
+                            alpha: material.edgeColor[3],
+                            visible: (material.flag & 16) !== 0 && material.edgeSize > 0
+                        };
+                    }
+                    if (params.map !== undefined) {
+                        if (!params.transparent) {
+                            this._checkImageTransparency(params.map, geometry, i);
+                        }
+                        params.emissive.multiplyScalar(0.2);
+                    }
+                    materials.push(new  THREE.MeshToonMaterial(params));
+                }
+                if (data.metadata.format === 'pmx') {
+                    function checkAlphaMorph(elements, materials) {
+                        for (var i = 0, il = elements.length; i < il; i++) {
+                            var element = elements[i];
+                            if (element.index === -1)
+                                continue;
+                            var material = materials[element.index];
+                            if (material.opacity !== element.diffuse[3]) {
+                                material.transparent = true;
+                            }
+                        }
+                    }
+                    for (var i = 0, il = data.morphs.length; i < il; i++) {
+                        var morph = data.morphs[i];
+                        var elements = morph.elements;
+                        if (morph.type === 0) {
+                            for (var j = 0, jl = elements.length; j < jl; j++) {
+                                var morph2 = data.morphs[elements[j].index];
+                                if (morph2.type !== 8)
+                                    continue;
+                                checkAlphaMorph(morph2.elements, materials);
+                            }
+                        } else if (morph.type === 8) {
+                            checkAlphaMorph(elements, materials);
+                        }
+                    }
+                }
+                return materials;
+            },
+            _getTGALoader: function () {
+                if (this.tgaLoader === null) {
+                    if (b.TGALoader === undefined) {
+                        throw new Error('THREE.MMDLoader: Import TGALoader');
+                    }
+                    this.tgaLoader = new TGALoader(this.manager);
+                }
+                return this.tgaLoader;
+            },
+            _isDefaultToonTexture: function (name) {
+                if (name.length !== 10)
+                    return false;
+                return /toon(10|0[0-9])\.bmp/.test(name);
+            },
+            _loadTexture: function (filePath, textures, params, onProgress, onError) {
+                params = params || {};
+                var scope = this;
+                var fullPath;
+                if (params.isDefaultToonTexture === true) {
+                    var index;
+                    try {
+                        index = parseInt(filePath.match(/toon([0-9]{2})\.bmp$/)[1]);
+                    } catch (e) {
+                        console.warn('THREE.MMDLoader: ' + filePath + ' seems like a ' + 'not right default texture path. Using toon00.bmp instead.');
+                        index = 0;
+                    }
+                    fullPath = DEFAULT_TOON_TEXTURES[index];
+                } else {
+                    fullPath = this.resourcePath + filePath;
+                }
+                if (textures[fullPath] !== undefined)
+                    return textures[fullPath];
+                var loader = this.manager.getHandler(fullPath);
+                if (loader === null) {
+                    loader = filePath.slice(-4).toLowerCase() === '.tga' ? this._getTGALoader() : this.textureLoader;
+                }
+                var texture = loader.load(fullPath, function (t) {
+                    if (params.isToonTexture === true) {
+                        t.image = scope._getRotatedImage(t.image);
+                        t.magFilter =  THREE.NearestFilter;
+                        t.minFilter =  THREE.NearestFilter;
+                    }
+                    t.flipY = false;
+                    t.wrapS =  THREE.RepeatWrapping;
+                    t.wrapT =  THREE.RepeatWrapping;
+                    for (var i = 0; i < texture.readyCallbacks.length; i++) {
+                        texture.readyCallbacks[i](texture);
+                    }
+                    delete texture.readyCallbacks;
+                }, onProgress, onError);
+                if (params.sphericalReflectionMapping === true) {
+                    texture.mapping =  THREE.SphericalReflectionMapping;
+                }
+                texture.readyCallbacks = [];
+                textures[fullPath] = texture;
+                return texture;
+            },
+            _getRotatedImage: function (image) {
+                var canvas = document.createElement('canvas');
+                var context = canvas.getContext('2d');
+                var width = image.width;
+                var height = image.height;
+                canvas.width = width;
+                canvas.height = height;
+                context.clearRect(0, 0, width, height);
+                context.translate(width / 2, height / 2);
+                context.rotate(0.5 * Math.PI);
+                context.translate(-width / 2, -height / 2);
+                context.drawImage(image, 0, 0);
+                return context.getImageData(0, 0, width, height);
+            },
+            _checkImageTransparency: function (map, geometry, groupIndex) {
+                map.readyCallbacks.push(function (texture) {
+                    function createImageData(image) {
+                        var canvas = document.createElement('canvas');
+                        canvas.width = image.width;
+                        canvas.height = image.height;
+                        var context = canvas.getContext('2d');
+                        context.drawImage(image, 0, 0);
+                        return context.getImageData(0, 0, canvas.width, canvas.height);
+                    }
+                    function detectImageTransparency(image, uvs, indices) {
+                        var width = image.width;
+                        var height = image.height;
+                        var data = image.data;
+                        var threshold = 253;
+                        if (data.length / (width * height) !== 4)
+                            return false;
+                        for (var i = 0; i < indices.length; i += 3) {
+                            var centerUV = {
+                                x: 0,
+                                y: 0
+                            };
+                            for (var j = 0; j < 3; j++) {
+                                var index = indices[i * 3 + j];
+                                var uv = {
+                                    x: uvs[index * 2 + 0],
+                                    y: uvs[index * 2 + 1]
+                                };
+                                if (getAlphaByUv(image, uv) < threshold)
+                                    return true;
+                                centerUV.x += uv.x;
+                                centerUV.y += uv.y;
+                            }
+                            centerUV.x /= 3;
+                            centerUV.y /= 3;
+                            if (getAlphaByUv(image, centerUV) < threshold)
+                                return true;
+                        }
+                        return false;
+                    }
+                    function getAlphaByUv(image, uv) {
+                        var width = image.width;
+                        var height = image.height;
+                        var x = Math.round(uv.x * width) % width;
+                        var y = Math.round(uv.y * height) % height;
+                        if (x < 0)
+                            x += width;
+                        if (y < 0)
+                            y += height;
+                        var index = y * width + x;
+                        return image.data[index * 4 + 3];
+                    }
+                    var imageData = texture.image.data !== undefined ? texture.image : createImageData(texture.image);
+                    var group = geometry.groups[groupIndex];
+                    if (detectImageTransparency(imageData, geometry.attributes.uv.array, geometry.index.array.slice(group.start, group.start + group.count))) {
+                        map.transparent = true;
+                    }
+                });
+            }
+        };
+        function AnimationBuilder() {
+        }
+        AnimationBuilder.prototype = {
+            constructor: AnimationBuilder,
+            build: function (vmd, mesh) {
+                var tracks = this.buildSkeletalAnimation(vmd, mesh).tracks;
+                var tracks2 = this.buildMorphAnimation(vmd, mesh).tracks;
+                for (var i = 0, il = tracks2.length; i < il; i++) {
+                    tracks.push(tracks2[i]);
+                }
+                return new  THREE.AnimationClip('', -1, tracks);
+            },
+            buildSkeletalAnimation: function (vmd, mesh) {
+                function pushInterpolation(array, interpolation, index) {
+                    array.push(interpolation[index + 0] / 127);
+                    array.push(interpolation[index + 8] / 127);
+                    array.push(interpolation[index + 4] / 127);
+                    array.push(interpolation[index + 12] / 127);
+                }
+                var tracks = [];
+                var motions = {};
+                var bones = mesh.skeleton.bones;
+                var boneNameDictionary = {};
+                for (var i = 0, il = bones.length; i < il; i++) {
+                    boneNameDictionary[bones[i].name] = true;
+                }
+                for (var i = 0; i < vmd.metadata.motionCount; i++) {
+                    var motion = vmd.motions[i];
+                    var boneName = motion.boneName;
+                    if (boneNameDictionary[boneName] === undefined)
+                        continue;
+                    motions[boneName] = motions[boneName] || [];
+                    motions[boneName].push(motion);
+                }
+                for (var key in motions) {
+                    var array = motions[key];
+                    array.sort(function (a, b) {
+                        return a.frameNum - b.frameNum;
+                    });
+                    var times = [];
+                    var positions = [];
+                    var rotations = [];
+                    var pInterpolations = [];
+                    var rInterpolations = [];
+                    var basePosition = mesh.skeleton.getBoneByName(key).position.toArray();
+                    for (var i = 0, il = array.length; i < il; i++) {
+                        var time = array[i].frameNum / 30;
+                        var position = array[i].position;
+                        var rotation = array[i].rotation;
+                        var interpolation = array[i].interpolation;
+                        times.push(time);
+                        for (var j = 0; j < 3; j++)
+                            positions.push(basePosition[j] + position[j]);
+                        for (var j = 0; j < 4; j++)
+                            rotations.push(rotation[j]);
+                        for (var j = 0; j < 3; j++)
+                            pushInterpolation(pInterpolations, interpolation, j);
+                        pushInterpolation(rInterpolations, interpolation, 3);
+                    }
+                    var targetName = '.bones[' + key + ']';
+                    tracks.push(this._createTrack(targetName + '.position',  THREE.VectorKeyframeTrack, times, positions, pInterpolations));
+                    tracks.push(this._createTrack(targetName + '.quaternion',  THREE.QuaternionKeyframeTrack, times, rotations, rInterpolations));
+                }
+                return new  THREE.AnimationClip('', -1, tracks);
+            },
+            buildMorphAnimation: function (vmd, mesh) {
+                var tracks = [];
+                var morphs = {};
+                var morphTargetDictionary = mesh.morphTargetDictionary;
+                for (var i = 0; i < vmd.metadata.morphCount; i++) {
+                    var morph = vmd.morphs[i];
+                    var morphName = morph.morphName;
+                    if (morphTargetDictionary[morphName] === undefined)
+                        continue;
+                    morphs[morphName] = morphs[morphName] || [];
+                    morphs[morphName].push(morph);
+                }
+                for (var key in morphs) {
+                    var array = morphs[key];
+                    array.sort(function (a, b) {
+                        return a.frameNum - b.frameNum;
+                    });
+                    var times = [];
+                    var values = [];
+                    for (var i = 0, il = array.length; i < il; i++) {
+                        times.push(array[i].frameNum / 30);
+                        values.push(array[i].weight);
+                    }
+                    tracks.push(new  THREE.NumberKeyframeTrack('.morphTargetInfluences[' + morphTargetDictionary[key] + ']', times, values));
+                }
+                return new  THREE.AnimationClip('', -1, tracks);
+            },
+            buildCameraAnimation: function (vmd) {
+                function pushVector3(array, vec) {
+                    array.push(vec.x);
+                    array.push(vec.y);
+                    array.push(vec.z);
+                }
+                function pushQuaternion(array, q) {
+                    array.push(q.x);
+                    array.push(q.y);
+                    array.push(q.z);
+                    array.push(q.w);
+                }
+                function pushInterpolation(array, interpolation, index) {
+                    array.push(interpolation[index * 4 + 0] / 127);
+                    array.push(interpolation[index * 4 + 1] / 127);
+                    array.push(interpolation[index * 4 + 2] / 127);
+                    array.push(interpolation[index * 4 + 3] / 127);
+                }
+                var tracks = [];
+                var cameras = vmd.cameras === undefined ? [] : vmd.cameras.slice();
+                cameras.sort(function (a, b) {
+                    return a.frameNum - b.frameNum;
+                });
+                var times = [];
+                var centers = [];
+                var quaternions = [];
+                var positions = [];
+                var fovs = [];
+                var cInterpolations = [];
+                var qInterpolations = [];
+                var pInterpolations = [];
+                var fInterpolations = [];
+                var quaternion = new  THREE.Quaternion();
+                var euler = new  THREE.Euler();
+                var position = new  THREE.Vector3();
+                var center = new  THREE.Vector3();
+                for (var i = 0, il = cameras.length; i < il; i++) {
+                    var motion = cameras[i];
+                    var time = motion.frameNum / 30;
+                    var pos = motion.position;
+                    var rot = motion.rotation;
+                    var distance = motion.distance;
+                    var fov = motion.fov;
+                    var interpolation = motion.interpolation;
+                    times.push(time);
+                    position.set(0, 0, -distance);
+                    center.set(pos[0], pos[1], pos[2]);
+                    euler.set(-rot[0], -rot[1], -rot[2]);
+                    quaternion.setFromEuler(euler);
+                    position.add(center);
+                    position.applyQuaternion(quaternion);
+                    pushVector3(centers, center);
+                    pushQuaternion(quaternions, quaternion);
+                    pushVector3(positions, position);
+                    fovs.push(fov);
+                    for (var j = 0; j < 3; j++) {
+                        pushInterpolation(cInterpolations, interpolation, j);
+                    }
+                    pushInterpolation(qInterpolations, interpolation, 3);
+                    for (var j = 0; j < 3; j++) {
+                        pushInterpolation(pInterpolations, interpolation, 4);
+                    }
+                    pushInterpolation(fInterpolations, interpolation, 5);
+                }
+                var tracks = [];
+                tracks.push(this._createTrack('target.position',  THREE.VectorKeyframeTrack, times, centers, cInterpolations));
+                tracks.push(this._createTrack('.quaternion',  THREE.QuaternionKeyframeTrack, times, quaternions, qInterpolations));
+                tracks.push(this._createTrack('.position',  THREE.VectorKeyframeTrack, times, positions, pInterpolations));
+                tracks.push(this._createTrack('.fov',  THREE.NumberKeyframeTrack, times, fovs, fInterpolations));
+                return new  THREE.AnimationClip('', -1, tracks);
+            },
+            _createTrack: function (node, typedKeyframeTrack, times, values, interpolations) {
+                if (times.length > 2) {
+                    times = times.slice();
+                    values = values.slice();
+                    interpolations = interpolations.slice();
+                    var stride = values.length / times.length;
+                    var interpolateStride = interpolations.length / times.length;
+                    var index = 1;
+                    for (var aheadIndex = 2, endIndex = times.length; aheadIndex < endIndex; aheadIndex++) {
+                        for (var i = 0; i < stride; i++) {
+                            if (values[index * stride + i] !== values[(index - 1) * stride + i] || values[index * stride + i] !== values[aheadIndex * stride + i]) {
+                                index++;
+                                break;
+                            }
+                        }
+                        if (aheadIndex > index) {
+                            times[index] = times[aheadIndex];
+                            for (var i = 0; i < stride; i++) {
+                                values[index * stride + i] = values[aheadIndex * stride + i];
+                            }
+                            for (var i = 0; i < interpolateStride; i++) {
+                                interpolations[index * interpolateStride + i] = interpolations[aheadIndex * interpolateStride + i];
+                            }
+                        }
+                    }
+                    times.length = index + 1;
+                    values.length = (index + 1) * stride;
+                    interpolations.length = (index + 1) * interpolateStride;
+                }
+                var track = new typedKeyframeTrack(node, times, values);
+                track.createInterpolant = function InterpolantFactoryMethodCubicBezier(result) {
+                    return new CubicBezierInterpolation(this.times, this.values, this.getValueSize(), result, new Float32Array(interpolations));
+                };
+                return track;
+            }
+        };
+        function CubicBezierInterpolation(parameterPositions, sampleValues, sampleSize, resultBuffer, params) {
+             THREE.Interpolant.call(this, parameterPositions, sampleValues, sampleSize, resultBuffer);
+            this.interpolationParams = params;
+        }
+        CubicBezierInterpolation.prototype = Object.assign(Object.create( THREE.Interpolant.prototype), {
+            constructor: CubicBezierInterpolation,
+            interpolate_: function (i1, t0, t, t1) {
+                var result = this.resultBuffer;
+                var values = this.sampleValues;
+                var stride = this.valueSize;
+                var params = this.interpolationParams;
+                var offset1 = i1 * stride;
+                var offset0 = offset1 - stride;
+                var weight1 = t1 - t0 < 1 / 30 * 1.5 ? 0 : (t - t0) / (t1 - t0);
+                if (stride === 4) {
+                    var x1 = params[i1 * 4 + 0];
+                    var x2 = params[i1 * 4 + 1];
+                    var y1 = params[i1 * 4 + 2];
+                    var y2 = params[i1 * 4 + 3];
+                    var ratio = this._calculate(x1, x2, y1, y2, weight1);
+                     THREE.Quaternion.slerpFlat(result, 0, values, offset0, values, offset1, ratio);
+                } else if (stride === 3) {
+                    for (var i = 0; i !== stride; ++i) {
+                        var x1 = params[i1 * 12 + i * 4 + 0];
+                        var x2 = params[i1 * 12 + i * 4 + 1];
+                        var y1 = params[i1 * 12 + i * 4 + 2];
+                        var y2 = params[i1 * 12 + i * 4 + 3];
+                        var ratio = this._calculate(x1, x2, y1, y2, weight1);
+                        result[i] = values[offset0 + i] * (1 - ratio) + values[offset1 + i] * ratio;
+                    }
+                } else {
+                    var x1 = params[i1 * 4 + 0];
+                    var x2 = params[i1 * 4 + 1];
+                    var y1 = params[i1 * 4 + 2];
+                    var y2 = params[i1 * 4 + 3];
+                    var ratio = this._calculate(x1, x2, y1, y2, weight1);
+                    result[0] = values[offset0] * (1 - ratio) + values[offset1] * ratio;
+                }
+                return result;
+            },
+            _calculate: function (x1, x2, y1, y2, x) {
+                var c = 0.5;
+                var t = c;
+                var s = 1 - t;
+                var loop = 15;
+                var eps = 0.00001;
+                var math = Math;
+                var sst3, stt3, ttt;
+                for (var i = 0; i < loop; i++) {
+                    sst3 = 3 * s * s * t;
+                    stt3 = 3 * s * t * t;
+                    ttt = t * t * t;
+                    var ft = sst3 * x1 + stt3 * x2 + ttt - x;
+                    if (math.abs(ft) < eps)
+                        break;
+                    c /= 2;
+                    t += ft < 0 ? c : -c;
+                    s = 1 - t;
+                }
+                return sst3 * y1 + stt3 * y2 + ttt;
+            }
+        });
+        return MMDLoader;
+    }();
+
+    return threex.loaders.MMDLoader = MMDLoader;
+});
 define('skylark-threejs-ex/loaders/MTLLoader',[
     "skylark-threejs",
     "../threex"
@@ -72001,6 +79470,6916 @@ define('skylark-threejs-ex/loaders/MTLLoader',[
         }
     };
     return threex.loaders.MTLLoader = MTLLoader;
+});
+define('skylark-threejs-ex/nodes/core/Node',[
+    "skylark-threejs",
+    "../../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    function Node(type) {
+        this.uuid = THREE.MathUtils.generateUUID();
+        this.name = '';
+        this.type = type;
+        this.userData = {};
+    }
+    Node.prototype = {
+        constructor: Node,
+        isNode: true,
+        analyze: function (builder, settings) {
+            settings = settings || {};
+            builder.analyzing = true;
+            this.build(builder.addFlow(settings.slot, settings.cache, settings.context), 'v4');
+            builder.clearVertexNodeCode();
+            builder.clearFragmentNodeCode();
+            builder.removeFlow();
+            builder.analyzing = false;
+        },
+        analyzeAndFlow: function (builder, output, settings) {
+            settings = settings || {};
+            this.analyze(builder, settings);
+            return this.flow(builder, output, settings);
+        },
+        flow: function (builder, output, settings) {
+            settings = settings || {};
+            builder.addFlow(settings.slot, settings.cache, settings.context);
+            var flow = {};
+            flow.result = this.build(builder, output);
+            flow.code = builder.clearNodeCode();
+            flow.extra = builder.context.extra;
+            builder.removeFlow();
+            return flow;
+        },
+        build: function (builder, output, uuid) {
+            output = output || this.getType(builder, output);
+            var data = builder.getNodeData(uuid || this);
+            if (builder.analyzing) {
+                this.appendDepsNode(builder, data, output);
+            }
+            if (builder.nodes.indexOf(this) === -1) {
+                builder.nodes.push(this);
+            }
+            if (this.updateFrame !== undefined && builder.updaters.indexOf(this) === -1) {
+                builder.updaters.push(this);
+            }
+            return this.generate(builder, output, uuid);
+        },
+        generate: function () {
+        },
+        appendDepsNode: function (builder, data, output) {
+            data.deps = (data.deps || 0) + 1;
+            var outputLen = builder.getTypeLength(output);
+            if (outputLen > (data.outputMax || 0) || this.getType(builder, output)) {
+                data.outputMax = outputLen;
+                data.output = output;
+            }
+        },
+        setName: function (name) {
+            this.name = name;
+            return this;
+        },
+        getName: function () {
+            return this.name;
+        },
+        getType: function (builder, output) {
+            return output === 'sampler2D' || output === 'samplerCube' ? output : this.type;
+        },
+        getJSONNode: function (meta) {
+            var isRootObject = meta === undefined || typeof meta === 'string';
+            if (!isRootObject && meta.nodes[this.uuid] !== undefined) {
+                return meta.nodes[this.uuid];
+            }
+        },
+        copy: function (source) {
+            if (source.name !== undefined)
+                this.name = source.name;
+            if (source.userData !== undefined)
+                this.userData = JSON.parse(JSON.stringify(source.userData));
+            return this;
+        },
+        createJSONNode: function (meta) {
+            var isRootObject = meta === undefined || typeof meta === 'string';
+            var data = {};
+            if (typeof this.nodeType !== 'string')
+                throw new Error('Node does not allow serialization.');
+            data.uuid = this.uuid;
+            data.nodeType = this.nodeType;
+            if (this.name !== '')
+                data.name = this.name;
+            if (JSON.stringify(this.userData) !== '{}')
+                data.userData = this.userData;
+            if (!isRootObject) {
+                meta.nodes[this.uuid] = data;
+            }
+            return data;
+        },
+        toJSON: function (meta) {
+            return this.getJSONNode(meta) || this.createJSONNode(meta);
+        }
+    };
+    return Node;
+});
+define('skylark-threejs-ex/nodes/core/TempNode',[
+    "skylark-threejs",
+    './Node'
+], function (THREE, Node) {
+    'use strict';
+    function TempNode(type, params) {
+        Node.call(this, type);
+        params = params || {};
+        this.shared = params.shared !== undefined ? params.shared : true;
+        this.unique = params.unique !== undefined ? params.unique : false;
+    }
+    TempNode.prototype = Object.create(Node.prototype);
+    TempNode.prototype.constructor = TempNode;
+    TempNode.prototype.build = function (builder, output, uuid, ns) {
+        output = output || this.getType(builder);
+        if (this.getShared(builder, output)) {
+            var isUnique = this.getUnique(builder, output);
+            if (isUnique && this.constructor.uuid === undefined) {
+                this.constructor.uuid = THREE.MathUtils.generateUUID();
+            }
+            uuid = builder.getUuid(uuid || this.getUuid(), !isUnique);
+            var data = builder.getNodeData(uuid), type = data.output || this.getType(builder);
+            if (builder.analyzing) {
+                if ((data.deps || 0) > 0 || this.getLabel()) {
+                    this.appendDepsNode(builder, data, output);
+                    return this.generate(builder, output, uuid);
+                }
+                return Node.prototype.build.call(this, builder, output, uuid);
+            } else if (isUnique) {
+                data.name = data.name || Node.prototype.build.call(this, builder, output, uuid);
+                return data.name;
+            } else if (!this.getLabel() && (!this.getShared(builder, type) || (builder.context.ignoreCache || data.deps === 1))) {
+                return Node.prototype.build.call(this, builder, output, uuid);
+            }
+            uuid = this.getUuid(false);
+            var name = this.getTemp(builder, uuid);
+            if (name) {
+                return builder.format(name, type, output);
+            } else {
+                name = TempNode.prototype.generate.call(this, builder, output, uuid, data.output, ns);
+                var code = this.generate(builder, type, uuid);
+                builder.addNodeCode(name + ' = ' + code + ';');
+                return builder.format(name, type, output);
+            }
+        }
+        return Node.prototype.build.call(this, builder, output, uuid);
+    };
+    TempNode.prototype.getShared = function (builder, output) {
+        return output !== 'sampler2D' && output !== 'samplerCube' && this.shared;
+    };
+    TempNode.prototype.getUnique = function () {
+        return this.unique;
+    };
+    TempNode.prototype.setLabel = function (name) {
+        this.label = name;
+        return this;
+    };
+    TempNode.prototype.getLabel = function () {
+        return this.label;
+    };
+    TempNode.prototype.getUuid = function (unique) {
+        var uuid = unique || unique == undefined ? this.constructor.uuid || this.uuid : this.uuid;
+        if (typeof this.scope === 'string')
+            uuid = this.scope + '-' + uuid;
+        return uuid;
+    };
+    TempNode.prototype.getTemp = function (builder, uuid) {
+        uuid = uuid || this.uuid;
+        var tempVar = builder.getVars()[uuid];
+        return tempVar ? tempVar.name : undefined;
+    };
+    TempNode.prototype.generate = function (builder, output, uuid, type, ns) {
+        if (!this.getShared(builder, output))
+            console.error('THREE.TempNode is not shared!');
+        uuid = uuid || this.uuid;
+        return builder.getTempVar(uuid, type || this.getType(builder), ns, this.getLabel()).name;
+    };
+    return TempNode;
+});
+define('skylark-threejs-ex/nodes/core/InputNode',[
+    './TempNode'
+], function (TempNode) {
+    'use strict';
+    function InputNode(type, params) {
+        params = params || {};
+        params.shared = params.shared !== undefined ? params.shared : false;
+        TempNode.call(this, type, params);
+        this.readonly = false;
+    }
+    InputNode.prototype = Object.create(TempNode.prototype);
+    InputNode.prototype.constructor = InputNode;
+    InputNode.prototype.setReadonly = function (value) {
+        this.readonly = value;
+        return this;
+    };
+    InputNode.prototype.getReadonly = function () {
+        return this.readonly;
+    };
+    InputNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        if (source.readonly !== undefined)
+            this.readonly = source.readonly;
+        return this;
+    };
+    InputNode.prototype.createJSONNode = function (meta) {
+        var data = TempNode.prototype.createJSONNode.call(this, meta);
+        if (this.readonly === true)
+            data.readonly = this.readonly;
+        return data;
+    };
+    InputNode.prototype.generate = function (builder, output, uuid, type, ns, needsUpdate) {
+        uuid = builder.getUuid(uuid || this.getUuid());
+        type = type || this.getType(builder);
+        var data = builder.getNodeData(uuid), readonly = this.getReadonly(builder) && this.generateReadonly !== undefined;
+        if (readonly) {
+            return this.generateReadonly(builder, output, uuid, type, ns, needsUpdate);
+        } else {
+            if (builder.isShader('vertex')) {
+                if (!data.vertex) {
+                    data.vertex = builder.createVertexUniform(type, this, ns, needsUpdate, this.getLabel());
+                }
+                return builder.format(data.vertex.name, type, output);
+            } else {
+                if (!data.fragment) {
+                    data.fragment = builder.createFragmentUniform(type, this, ns, needsUpdate, this.getLabel());
+                }
+                return builder.format(data.fragment.name, type, output);
+            }
+        }
+    };
+    return InputNode;
+});
+define('skylark-threejs-ex/nodes/core/ConstNode',[
+    './TempNode'
+], function (TempNode) {
+    'use strict';
+    var declarationRegexp = /^([a-z_0-9]+)\s([a-z_0-9]+)\s?\=?\s?(.*?)(\;|$)/i;
+    function ConstNode(src, useDefine) {
+        TempNode.call(this);
+        this.parse(src || ConstNode.PI, useDefine);
+    }
+    ConstNode.PI = 'PI';
+    ConstNode.PI2 = 'PI2';
+    ConstNode.RECIPROCAL_PI = 'RECIPROCAL_PI';
+    ConstNode.RECIPROCAL_PI2 = 'RECIPROCAL_PI2';
+    ConstNode.LOG2 = 'LOG2';
+    ConstNode.EPSILON = 'EPSILON';
+    ConstNode.prototype = Object.create(TempNode.prototype);
+    ConstNode.prototype.constructor = ConstNode;
+    ConstNode.prototype.nodeType = 'Const';
+    ConstNode.prototype.getType = function (builder) {
+        return builder.getTypeByFormat(this.type);
+    };
+    ConstNode.prototype.parse = function (src, useDefine) {
+        this.src = src || '';
+        var name, type, value = '';
+        var match = this.src.match(declarationRegexp);
+        this.useDefine = useDefine || this.src.charAt(0) === '#';
+        if (match && match.length > 1) {
+            type = match[1];
+            name = match[2];
+            value = match[3];
+        } else {
+            name = this.src;
+            type = 'f';
+        }
+        this.name = name;
+        this.type = type;
+        this.value = value;
+    };
+    ConstNode.prototype.build = function (builder, output) {
+        if (output === 'source') {
+            if (this.value) {
+                if (this.useDefine) {
+                    return '#define ' + this.name + ' ' + this.value;
+                }
+                return 'const ' + this.type + ' ' + this.name + ' = ' + this.value + ';';
+            } else if (this.useDefine) {
+                return this.src;
+            }
+        } else {
+            builder.include(this);
+            return builder.format(this.name, this.getType(builder), output);
+        }
+    };
+    ConstNode.prototype.generate = function (builder, output) {
+        return builder.format(this.name, this.getType(builder), output);
+    };
+    ConstNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.parse(source.src, source.useDefine);
+        return this;
+    };
+    ConstNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.src = this.src;
+            if (data.useDefine === true)
+                data.useDefine = true;
+        }
+        return data;
+    };
+    return ConstNode;
+});
+define('skylark-threejs-ex/nodes/core/VarNode',[
+    './Node'
+], function (Node) {
+    'use strict';
+    function VarNode(type, value) {
+        Node.call(this, type);
+        this.value = value;
+    }
+    VarNode.prototype = Object.create(Node.prototype);
+    VarNode.prototype.constructor = VarNode;
+    VarNode.prototype.nodeType = 'Var';
+    VarNode.prototype.getType = function (builder) {
+        return builder.getTypeByFormat(this.type);
+    };
+    VarNode.prototype.generate = function (builder, output) {
+        var varying = builder.getVar(this.uuid, this.type);
+        if (this.value && builder.isShader('vertex')) {
+            builder.addNodeCode(varying.name + ' = ' + this.value.build(builder, this.getType(builder)) + ';');
+        }
+        return builder.format(varying.name, this.getType(builder), output);
+    };
+    VarNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        this.type = source.type;
+        this.value = source.value;
+        return this;
+    };
+    VarNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.type = this.type;
+            if (this.value)
+                data.value = this.value.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return VarNode ;
+});
+define('skylark-threejs-ex/nodes/core/StructNode',[
+    './TempNode'
+], function (TempNode) {
+    'use strict';
+    var declarationRegexp = /^struct\s*([a-z_0-9]+)\s*{\s*((.|\n)*?)}/img, propertiesRegexp = /\s*(\w*?)\s*(\w*?)(\=|\;)/img;
+    function StructNode(src) {
+        TempNode.call(this);
+        this.parse(src);
+    }
+    StructNode.prototype = Object.create(TempNode.prototype);
+    StructNode.prototype.constructor = StructNode;
+    StructNode.prototype.nodeType = 'Struct';
+    StructNode.prototype.getType = function (builder) {
+        return builder.getTypeByFormat(this.name);
+    };
+    StructNode.prototype.getInputByName = function (name) {
+        var i = this.inputs.length;
+        while (i--) {
+            if (this.inputs[i].name === name) {
+                return this.inputs[i];
+            }
+        }
+    };
+    StructNode.prototype.generate = function (builder, output) {
+        if (output === 'source') {
+            return this.src + ';';
+        } else {
+            return builder.format('( ' + this.src + ' )', this.getType(builder), output);
+        }
+    };
+    StructNode.prototype.parse = function (src) {
+        this.src = src || '';
+        this.inputs = [];
+        var declaration = declarationRegexp.exec(this.src);
+        if (declaration) {
+            var properties = declaration[2], match;
+            while (match = propertiesRegexp.exec(properties)) {
+                this.inputs.push({
+                    type: match[1],
+                    name: match[2]
+                });
+            }
+            this.name = declaration[1];
+        } else {
+            this.name = '';
+        }
+        this.type = this.name;
+    };
+    StructNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.src = this.src;
+        }
+        return data;
+    };
+    return StructNode;
+});
+define('skylark-threejs-ex/nodes/core/AttributeNode',[
+    './Node'
+], function (Node) {
+    'use strict';
+    function AttributeNode(name, type) {
+        Node.call(this, type);
+        this.name = name;
+    }
+    AttributeNode.prototype = Object.create(Node.prototype);
+    AttributeNode.prototype.constructor = AttributeNode;
+    AttributeNode.prototype.nodeType = 'Attribute';
+    AttributeNode.prototype.getAttributeType = function (builder) {
+        return typeof this.type === 'number' ? builder.getConstructorFromLength(this.type) : this.type;
+    };
+    AttributeNode.prototype.getType = function (builder) {
+        var type = this.getAttributeType(builder);
+        return builder.getTypeByFormat(type);
+    };
+    AttributeNode.prototype.generate = function (builder, output) {
+        var type = this.getAttributeType(builder);
+        var attribute = builder.getAttribute(this.name, type), name = builder.isShader('vertex') ? this.name : attribute.varying.name;
+        return builder.format(name, this.getType(builder), output);
+    };
+    AttributeNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        this.type = source.type;
+        return this;
+    };
+    AttributeNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.type = this.type;
+        }
+        return data;
+    };
+    return AttributeNode;
+});
+define('skylark-threejs-ex/nodes/core/NodeLib',[],function () {
+    'use strict';
+    var NodeLib = {
+        nodes: {},
+        keywords: {},
+        add: function (node) {
+            this.nodes[node.name] = node;
+        },
+        addKeyword: function (name, callback, cache) {
+            cache = cache !== undefined ? cache : true;
+            this.keywords[name] = {
+                callback: callback,
+                cache: cache
+            };
+        },
+        remove: function (node) {
+            delete this.nodes[node.name];
+        },
+        removeKeyword: function (name) {
+            delete this.keywords[name];
+        },
+        get: function (name) {
+            return this.nodes[name];
+        },
+        getKeyword: function (name, builder) {
+            return this.keywords[name].callback.call(this, builder);
+        },
+        getKeywordData: function (name) {
+            return this.keywords[name];
+        },
+        contains: function (name) {
+            return this.nodes[name] !== undefined;
+        },
+        containsKeyword: function (name) {
+            return this.keywords[name] !== undefined;
+        }
+    };
+    return NodeLib;
+});
+define('skylark-threejs-ex/nodes/core/FunctionNode',[
+    './TempNode',
+    './NodeLib'
+], function (TempNode,NodeLib) {
+    'use strict';
+    var declarationRegexp = /^\s*([a-z_0-9]+)\s([a-z_0-9]+)\s*\((.*?)\)/i, propertiesRegexp = /[a-z_0-9]+/ig;
+    function FunctionNode(src, includes, extensions, keywords, type) {
+        this.isMethod = type === undefined;
+        this.isInterface = false;
+        TempNode.call(this, type);
+        this.parse(src, includes, extensions, keywords);
+    }
+    FunctionNode.prototype = Object.create(TempNode.prototype);
+    FunctionNode.prototype.constructor = FunctionNode;
+    FunctionNode.prototype.nodeType = 'Function';
+    FunctionNode.prototype.useKeywords = true;
+    FunctionNode.prototype.getShared = function () {
+        return !this.isMethod;
+    };
+    FunctionNode.prototype.getType = function (builder) {
+        return builder.getTypeByFormat(this.type);
+    };
+    FunctionNode.prototype.getInputByName = function (name) {
+        var i = this.inputs.length;
+        while (i--) {
+            if (this.inputs[i].name === name) {
+                return this.inputs[i];
+            }
+        }
+    };
+    FunctionNode.prototype.getIncludeByName = function (name) {
+        var i = this.includes.length;
+        while (i--) {
+            if (this.includes[i].name === name) {
+                return this.includes[i];
+            }
+        }
+    };
+    FunctionNode.prototype.generate = function (builder, output) {
+        var match, offset = 0, src = this.src;
+        for (var i = 0; i < this.includes.length; i++) {
+            builder.include(this.includes[i], this);
+        }
+        for (var ext in this.extensions) {
+            builder.extensions[ext] = true;
+        }
+        var matches = [];
+        while (match = propertiesRegexp.exec(this.src))
+            matches.push(match);
+        for (var i = 0; i < matches.length; i++) {
+            var match = matches[i];
+            var prop = match[0], isGlobal = this.isMethod ? !this.getInputByName(prop) : true, reference = prop;
+            if (this.keywords[prop] || this.useKeywords && isGlobal && NodeLib.containsKeyword(prop)) {
+                var node = this.keywords[prop];
+                if (!node) {
+                    var keyword = NodeLib.getKeywordData(prop);
+                    if (keyword.cache)
+                        node = builder.keywords[prop];
+                    node = node || NodeLib.getKeyword(prop, builder);
+                    if (keyword.cache)
+                        builder.keywords[prop] = node;
+                }
+                reference = node.build(builder);
+            }
+            if (prop !== reference) {
+                src = src.substring(0, match.index + offset) + reference + src.substring(match.index + prop.length + offset);
+                offset += reference.length - prop.length;
+            }
+            if (this.getIncludeByName(reference) === undefined && NodeLib.contains(reference)) {
+                builder.include(NodeLib.get(reference));
+            }
+        }
+        if (output === 'source') {
+            return src;
+        } else if (this.isMethod) {
+            if (!this.isInterface) {
+                builder.include(this, false, src);
+            }
+            return this.name;
+        } else {
+            return builder.format('( ' + src + ' )', this.getType(builder), output);
+        }
+    };
+    FunctionNode.prototype.parse = function (src, includes, extensions, keywords) {
+        this.src = src || '';
+        this.includes = includes || [];
+        this.extensions = extensions || {};
+        this.keywords = keywords || {};
+        if (this.isMethod) {
+            var match = this.src.match(declarationRegexp);
+            this.inputs = [];
+            if (match && match.length == 4) {
+                this.type = match[1];
+                this.name = match[2];
+                var inputs = match[3].match(propertiesRegexp);
+                if (inputs) {
+                    var i = 0;
+                    while (i < inputs.length) {
+                        var qualifier = inputs[i++];
+                        var type, name;
+                        if (qualifier === 'in' || qualifier === 'out' || qualifier === 'inout') {
+                            type = inputs[i++];
+                        } else {
+                            type = qualifier;
+                            qualifier = '';
+                        }
+                        name = inputs[i++];
+                        this.inputs.push({
+                            name: name,
+                            type: type,
+                            qualifier: qualifier
+                        });
+                    }
+                }
+                this.isInterface = this.src.indexOf('{') === -1;
+            } else {
+                this.type = '';
+                this.name = '';
+            }
+        }
+    };
+    FunctionNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.isMethod = source.isMethod;
+        this.useKeywords = source.useKeywords;
+        this.parse(source.src, source.includes, source.extensions, source.keywords);
+        if (source.type !== undefined)
+            this.type = source.type;
+        return this;
+    };
+    FunctionNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.src = this.src;
+            data.isMethod = this.isMethod;
+            data.useKeywords = this.useKeywords;
+            if (!this.isMethod)
+                data.type = this.type;
+            data.extensions = JSON.parse(JSON.stringify(this.extensions));
+            data.keywords = {};
+            for (var keyword in this.keywords) {
+                data.keywords[keyword] = this.keywords[keyword].toJSON(meta).uuid;
+            }
+            if (this.includes.length) {
+                data.includes = [];
+                for (var i = 0; i < this.includes.length; i++) {
+                    data.includes.push(this.includes[i].toJSON(meta).uuid);
+                }
+            }
+        }
+        return data;
+    };
+    return FunctionNode;
+});
+define('skylark-threejs-ex/nodes/core/ExpressionNode',[
+	'./FunctionNode'
+], function (FunctionNode) {
+    'use strict';
+    function ExpressionNode(src, type, keywords, extensions, includes) {
+        FunctionNode.call(this, src, includes, extensions, keywords, type);
+    }
+    ExpressionNode.prototype = Object.create(FunctionNode.prototype);
+    ExpressionNode.prototype.constructor = ExpressionNode;
+    ExpressionNode.prototype.nodeType = 'Expression';
+    return ExpressionNode;
+});
+define('skylark-threejs-ex/nodes/core/FunctionCallNode',[
+    './TempNode'
+], function (TempNode) {
+    'use strict';
+    function FunctionCallNode(func, inputs) {
+        TempNode.call(this);
+        this.setFunction(func, inputs);
+    }
+    FunctionCallNode.prototype = Object.create(TempNode.prototype);
+    FunctionCallNode.prototype.constructor = FunctionCallNode;
+    FunctionCallNode.prototype.nodeType = 'FunctionCall';
+    FunctionCallNode.prototype.setFunction = function (func, inputs) {
+        this.value = func;
+        this.inputs = inputs || [];
+    };
+    FunctionCallNode.prototype.getFunction = function () {
+        return this.value;
+    };
+    FunctionCallNode.prototype.getType = function (builder) {
+        return this.value.getType(builder);
+    };
+    FunctionCallNode.prototype.generate = function (builder, output) {
+        var type = this.getType(builder), func = this.value;
+        var code = func.build(builder, output) + '( ', params = [];
+        for (var i = 0; i < func.inputs.length; i++) {
+            var inpt = func.inputs[i], param = this.inputs[i] || this.inputs[inpt.name];
+            params.push(param.build(builder, builder.getTypeByFormat(inpt.type)));
+        }
+        code += params.join(', ') + ' )';
+        return builder.format(code, type, output);
+    };
+    FunctionCallNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        for (var prop in source.inputs) {
+            this.inputs[prop] = source.inputs[prop];
+        }
+        this.value = source.value;
+        return this;
+    };
+    FunctionCallNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            var func = this.value;
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+            if (func.inputs.length) {
+                data.inputs = {};
+                for (var i = 0; i < func.inputs.length; i++) {
+                    var inpt = func.inputs[i], node = this.inputs[i] || this.inputs[inpt.name];
+                    data.inputs[inpt.name] = node.toJSON(meta).uuid;
+                }
+            }
+        }
+        return data;
+    };
+    return FunctionCallNode;
+});
+define('skylark-threejs-ex/nodes/core/NodeUtils',[],function () {
+    'use strict';
+    var NodeUtils = {
+        elements: [
+            'x',
+            'y',
+            'z',
+            'w'
+        ],
+        addShortcuts: function () {
+            function applyShortcut(proxy, property, subProperty) {
+                if (subProperty) {
+                    return {
+                        get: function () {
+                            return this[proxy][property][subProperty];
+                        },
+                        set: function (val) {
+                            this[proxy][property][subProperty] = val;
+                        }
+                    };
+                } else {
+                    return {
+                        get: function () {
+                            return this[proxy][property];
+                        },
+                        set: function (val) {
+                            this[proxy][property] = val;
+                        }
+                    };
+                }
+            }
+            return function addShortcuts(proto, proxy, list) {
+                var shortcuts = {};
+                for (var i = 0; i < list.length; ++i) {
+                    var data = list[i].split('.'), property = data[0], subProperty = data[1];
+                    shortcuts[property] = applyShortcut(proxy, property, subProperty);
+                }
+                Object.defineProperties(proto, shortcuts);
+            };
+        }()
+    };
+    return NodeUtils;
+});
+define('skylark-threejs-ex/nodes/core/NodeFrame',[],function () {
+    'use strict';
+    function NodeFrame(time) {
+        this.time = time !== undefined ? time : 0;
+        this.id = 0;
+    }
+    NodeFrame.prototype = {
+        constructor: NodeFrame,
+        update: function (delta) {
+            ++this.id;
+            this.time += delta;
+            this.delta = delta;
+            return this;
+        },
+        setRenderer: function (renderer) {
+            this.renderer = renderer;
+            return this;
+        },
+        setRenderTexture: function (renderTexture) {
+            this.renderTexture = renderTexture;
+            return this;
+        },
+        updateNode: function (node) {
+            if (node.frameId === this.id)
+                return this;
+            node.updateFrame(this);
+            node.frameId = this.id;
+            return this;
+        }
+    };
+    return NodeFrame;
+});
+define('skylark-threejs-ex/nodes/core/NodeUniform',[],function () {
+    'use strict';
+    function NodeUniform(params) {
+        params = params || {};
+        this.name = params.name;
+        this.type = params.type;
+        this.node = params.node;
+        this.needsUpdate = params.needsUpdate;
+    }
+    Object.defineProperties(NodeUniform.prototype, {
+        value: {
+            get: function () {
+                return this.node.value;
+            },
+            set: function (val) {
+                this.node.value = val;
+            }
+        }
+    });
+    return NodeUniform;
+});
+define('skylark-threejs-ex/nodes/inputs/Vector2Node',[
+    "skylark-threejs",
+    '../core/InputNode',
+    '../core/NodeUtils'
+], function (
+    THREE, 
+    InputNode, 
+    NodeUtils
+) {
+    'use strict';
+    function Vector2Node(x, y) {
+        InputNode.call(this, 'v2');
+        this.value = x instanceof THREE.Vector2 ? x : new THREE.Vector2(x, y);
+    }
+    Vector2Node.prototype = Object.create(InputNode.prototype);
+    Vector2Node.prototype.constructor = Vector2Node;
+    Vector2Node.prototype.nodeType = 'Vector2';
+    NodeUtils.addShortcuts(Vector2Node.prototype, 'value', [
+        'x',
+        'y'
+    ]);
+    Vector2Node.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format('vec2( ' + this.x + ', ' + this.y + ' )', type, output);
+    };
+    Vector2Node.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value.copy(source);
+        return this;
+    };
+    Vector2Node.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.x = this.x;
+            data.y = this.y;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return Vector2Node;
+});
+define('skylark-threejs-ex/nodes/inputs/Vector3Node',[
+    "skylark-threejs",
+    '../core/InputNode',
+    '../core/NodeUtils'
+], function (
+    THREE, 
+    InputNode, 
+    NodeUtils
+) {
+    'use strict';
+    function Vector3Node(x, y, z) {
+        InputNode.call(this, 'v3');
+        this.value = x instanceof THREE.Vector3 ? x : new THREE.Vector3(x, y, z);
+    }
+    Vector3Node.prototype = Object.create(InputNode.prototype);
+    Vector3Node.prototype.constructor = Vector3Node;
+    Vector3Node.prototype.nodeType = 'Vector3';
+    NodeUtils.addShortcuts(Vector3Node.prototype, 'value', [
+        'x',
+        'y',
+        'z'
+    ]);
+    Vector3Node.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format('vec3( ' + this.x + ', ' + this.y + ', ' + this.z + ' )', type, output);
+    };
+    Vector3Node.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value.copy(source);
+        return this;
+    };
+    Vector3Node.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.x = this.x;
+            data.y = this.y;
+            data.z = this.z;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return Vector3Node;
+});
+define('skylark-threejs-ex/nodes/inputs/Vector4Node',[
+    "skylark-threejs",
+    '../core/InputNode',
+    '../core/NodeUtils'
+], function (
+    THREE, 
+    InputNode, 
+    NodeUtils
+) {
+    'use strict';
+    function Vector4Node(x, y, z, w) {
+        InputNode.call(this, 'v4');
+        this.value = x instanceof THREE.Vector4 ? x : new THREE.Vector4(x, y, z, w);
+    }
+    Vector4Node.prototype = Object.create(InputNode.prototype);
+    Vector4Node.prototype.constructor = Vector4Node;
+    Vector4Node.prototype.nodeType = 'Vector4';
+    NodeUtils.addShortcuts(Vector4Node.prototype, 'value', [
+        'x',
+        'y',
+        'z',
+        'w'
+    ]);
+    Vector4Node.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format('vec4( ' + this.x + ', ' + this.y + ', ' + this.z + ', ' + this.w + ' )', type, output);
+    };
+    Vector4Node.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value.copy(source);
+        return this;
+    };
+    Vector4Node.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.x = this.x;
+            data.y = this.y;
+            data.z = this.z;
+            data.w = this.w;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return Vector4Node;
+});
+define('skylark-threejs-ex/nodes/accessors/UVNode',[
+    '../core/TempNode',
+    '../core/NodeLib'
+], function (TempNode, NodeLib) {
+    'use strict';
+    function UVNode(index) {
+        TempNode.call(this, 'v2', { shared: false });
+        this.index = index || 0;
+    }
+    UVNode.prototype = Object.create(TempNode.prototype);
+    UVNode.prototype.constructor = UVNode;
+    UVNode.prototype.nodeType = 'UV';
+    UVNode.prototype.generate = function (builder, output) {
+        builder.requires.uv[this.index] = true;
+        var uvIndex = this.index > 0 ? this.index + 1 : '';
+        var result = builder.isShader('vertex') ? 'uv' + uvIndex : 'vUv' + uvIndex;
+        return builder.format(result, this.getType(builder), output);
+    };
+    UVNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.index = source.index;
+        return this;
+    };
+    UVNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.index = this.index;
+        }
+        return data;
+    };
+    NodeLib.addKeyword('uv', function () {
+        return new UVNode();
+    });
+    NodeLib.addKeyword('uv2', function () {
+        return new UVNode(1);
+    });
+    return UVNode;
+});
+define('skylark-threejs-ex/nodes/inputs/FloatNode',[
+    '../core/InputNode'
+], function (InputNode) {
+    'use strict';
+    function FloatNode(value) {
+        InputNode.call(this, 'f');
+        this.value = value || 0;
+    }
+    FloatNode.prototype = Object.create(InputNode.prototype);
+    FloatNode.prototype.constructor = FloatNode;
+    FloatNode.prototype.nodeType = 'Float';
+    FloatNode.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format(this.value + (this.value % 1 ? '' : '.0'), type, output);
+    };
+    FloatNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        return this;
+    };
+    FloatNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return FloatNode;
+});
+define('skylark-threejs-ex/nodes/utils/ColorSpaceNode',[
+    "skylark-threejs",
+    '../core/TempNode',
+    '../core/ConstNode',
+    '../inputs/FloatNode',
+    '../core/FunctionNode',
+    '../core/ExpressionNode'
+], function (
+    THREE, 
+    TempNode, 
+    ConstNode, 
+    FloatNode, 
+    FunctionNode, 
+    ExpressionNode
+) {
+    'use strict';
+    function ColorSpaceNode(input, method) {
+         TempNode.call(this, 'v4');
+        this.input = input;
+        this.method = method || ColorSpaceNode.LINEAR_TO_LINEAR;
+    }
+    ColorSpaceNode.Nodes = function () {
+        var LinearToLinear = new FunctionNode([
+            'vec4 LinearToLinear( in vec4 value ) {',
+            '\treturn value;',
+            '}'
+        ].join('\n'));
+        var GammaToLinear = new FunctionNode([
+            'vec4 GammaToLinear( in vec4 value, in float gammaFactor ) {',
+            '\treturn vec4( pow( value.xyz, vec3( gammaFactor ) ), value.w );',
+            '}'
+        ].join('\n'));
+        var LinearToGamma = new FunctionNode([
+            'vec4 LinearToGamma( in vec4 value, in float gammaFactor ) {',
+            '\treturn vec4( pow( value.xyz, vec3( 1.0 / gammaFactor ) ), value.w );',
+            '}'
+        ].join('\n'));
+        var sRGBToLinear = new FunctionNode([
+            'vec4 sRGBToLinear( in vec4 value ) {',
+            '\treturn vec4( mix( pow( value.rgb * 0.9478672986 + vec3( 0.0521327014 ), vec3( 2.4 ) ), value.rgb * 0.0773993808, vec3( lessThanEqual( value.rgb, vec3( 0.04045 ) ) ) ), value.w );',
+            '}'
+        ].join('\n'));
+        var LinearTosRGB = new FunctionNode([
+            'vec4 LinearTosRGB( in vec4 value ) {',
+            '\treturn vec4( mix( pow( value.rgb, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ), value.rgb * 12.92, vec3( lessThanEqual( value.rgb, vec3( 0.0031308 ) ) ) ), value.w );',
+            '}'
+        ].join('\n'));
+        var RGBEToLinear = new FunctionNode([
+            'vec4 RGBEToLinear( in vec4 value ) {',
+            '\treturn vec4( value.rgb * exp2( value.a * 255.0 - 128.0 ), 1.0 );',
+            '}'
+        ].join('\n'));
+        var LinearToRGBE = new FunctionNode([
+            'vec4 LinearToRGBE( in vec4 value ) {',
+            '\tfloat maxComponent = max( max( value.r, value.g ), value.b );',
+            '\tfloat fExp = clamp( ceil( log2( maxComponent ) ), -128.0, 127.0 );',
+            '\treturn vec4( value.rgb / exp2( fExp ), ( fExp + 128.0 ) / 255.0 );',
+            '}'
+        ].join('\n'));
+        var RGBMToLinear = new FunctionNode([
+            'vec3 RGBMToLinear( in vec4 value, in float maxRange ) {',
+            '\treturn vec4( value.xyz * value.w * maxRange, 1.0 );',
+            '}'
+        ].join('\n'));
+        var LinearToRGBM = new FunctionNode([
+            'vec3 LinearToRGBM( in vec4 value, in float maxRange ) {',
+            '\tfloat maxRGB = max( value.x, max( value.g, value.b ) );',
+            '\tfloat M      = clamp( maxRGB / maxRange, 0.0, 1.0 );',
+            '\tM            = ceil( M * 255.0 ) / 255.0;',
+            '\treturn vec4( value.rgb / ( M * maxRange ), M );',
+            '}'
+        ].join('\n'));
+        var RGBDToLinear = new FunctionNode([
+            'vec3 RGBDToLinear( in vec4 value, in float maxRange ) {',
+            '\treturn vec4( value.rgb * ( ( maxRange / 255.0 ) / value.a ), 1.0 );',
+            '}'
+        ].join('\n'));
+        var LinearToRGBD = new FunctionNode([
+            'vec3 LinearToRGBD( in vec4 value, in float maxRange ) {',
+            '\tfloat maxRGB = max( value.x, max( value.g, value.b ) );',
+            '\tfloat D      = max( maxRange / maxRGB, 1.0 );',
+            '\tD            = clamp( floor( D ) / 255.0, 0.0, 1.0 );',
+            '\treturn vec4( value.rgb * ( D * ( 255.0 / maxRange ) ), D );',
+            '}'
+        ].join('\n'));
+        var cLogLuvM = new  ConstNode('const mat3 cLogLuvM = mat3( 0.2209, 0.3390, 0.4184, 0.1138, 0.6780, 0.7319, 0.0102, 0.1130, 0.2969 );');
+        var LinearToLogLuv = new FunctionNode([
+            'vec4 LinearToLogLuv( in vec4 value ) {',
+            '\tvec3 Xp_Y_XYZp = cLogLuvM * value.rgb;',
+            '\tXp_Y_XYZp = max(Xp_Y_XYZp, vec3(1e-6, 1e-6, 1e-6));',
+            '\tvec4 vResult;',
+            '\tvResult.xy = Xp_Y_XYZp.xy / Xp_Y_XYZp.z;',
+            '\tfloat Le = 2.0 * log2(Xp_Y_XYZp.y) + 127.0;',
+            '\tvResult.w = fract(Le);',
+            '\tvResult.z = (Le - (floor(vResult.w*255.0))/255.0)/255.0;',
+            '\treturn vResult;',
+            '}'
+        ].join('\n'), [cLogLuvM]);
+        var cLogLuvInverseM = new  ConstNode('const mat3 cLogLuvInverseM = mat3( 6.0014, -2.7008, -1.7996, -1.3320, 3.1029, -5.7721, 0.3008, -1.0882, 5.6268 );');
+        var LogLuvToLinear = new FunctionNode([
+            'vec4 LogLuvToLinear( in vec4 value ) {',
+            '\tfloat Le = value.z * 255.0 + value.w;',
+            '\tvec3 Xp_Y_XYZp;',
+            '\tXp_Y_XYZp.y = exp2((Le - 127.0) / 2.0);',
+            '\tXp_Y_XYZp.z = Xp_Y_XYZp.y / value.y;',
+            '\tXp_Y_XYZp.x = value.x * Xp_Y_XYZp.z;',
+            '\tvec3 vRGB = cLogLuvInverseM * Xp_Y_XYZp.rgb;',
+            '\treturn vec4( max(vRGB, 0.0), 1.0 );',
+            '}'
+        ].join('\n'), [cLogLuvInverseM]);
+        return {
+            LinearToLinear: LinearToLinear,
+            GammaToLinear: GammaToLinear,
+            LinearToGamma: LinearToGamma,
+            sRGBToLinear: sRGBToLinear,
+            LinearTosRGB: LinearTosRGB,
+            RGBEToLinear: RGBEToLinear,
+            LinearToRGBE: LinearToRGBE,
+            RGBMToLinear: RGBMToLinear,
+            LinearToRGBM: LinearToRGBM,
+            RGBDToLinear: RGBDToLinear,
+            LinearToRGBD: LinearToRGBD,
+            cLogLuvM: cLogLuvM,
+            LinearToLogLuv: LinearToLogLuv,
+            cLogLuvInverseM: cLogLuvInverseM,
+            LogLuvToLinear: LogLuvToLinear
+        };
+    }();
+    ColorSpaceNode.LINEAR_TO_LINEAR = 'LinearToLinear';
+    ColorSpaceNode.GAMMA_TO_LINEAR = 'GammaToLinear';
+    ColorSpaceNode.LINEAR_TO_GAMMA = 'LinearToGamma';
+    ColorSpaceNode.SRGB_TO_LINEAR = 'sRGBToLinear';
+    ColorSpaceNode.LINEAR_TO_SRGB = 'LinearTosRGB';
+    ColorSpaceNode.RGBE_TO_LINEAR = 'RGBEToLinear';
+    ColorSpaceNode.LINEAR_TO_RGBE = 'LinearToRGBE';
+    ColorSpaceNode.RGBM_TO_LINEAR = 'RGBMToLinear';
+    ColorSpaceNode.LINEAR_TO_RGBM = 'LinearToRGBM';
+    ColorSpaceNode.RGBD_TO_LINEAR = 'RGBDToLinear';
+    ColorSpaceNode.LINEAR_TO_RGBD = 'LinearToRGBD';
+    ColorSpaceNode.LINEAR_TO_LOG_LUV = 'LinearToLogLuv';
+    ColorSpaceNode.LOG_LUV_TO_LINEAR = 'LogLuvToLinear';
+    ColorSpaceNode.getEncodingComponents = function (encoding) {
+        switch (encoding) {
+        case THREE.LinearEncoding:
+            return ['Linear'];
+        case THREE.sRGBEncoding:
+            return ['sRGB'];
+        case THREE.RGBEEncoding:
+            return ['RGBE'];
+        case THREE.RGBM7Encoding:
+            return [
+                'RGBM',
+                new  FloatNode(7).setReadonly(true)
+            ];
+        case THREE.RGBM16Encoding:
+            return [
+                'RGBM',
+                new FloatNode(16).setReadonly(true)
+            ];
+        case THREE.RGBDEncoding:
+            return [
+                'RGBD',
+                new FloatNode(256).setReadonly(true)
+            ];
+        case THREE.GammaEncoding:
+            return [
+                'Gamma',
+                new ExpressionNode('float( GAMMA_FACTOR )', 'f')
+            ];
+        }
+    };
+    ColorSpaceNode.prototype = Object.create(TempNode.prototype);
+    ColorSpaceNode.prototype.constructor = ColorSpaceNode;
+    ColorSpaceNode.prototype.nodeType = 'ColorSpace';
+    ColorSpaceNode.prototype.generate = function (builder, output) {
+        var input = this.input.build(builder, 'v4');
+        var outputType = this.getType(builder);
+        var methodNode = ColorSpaceNode.Nodes[this.method];
+        var method = builder.include(methodNode);
+        if (method === ColorSpaceNode.LINEAR_TO_LINEAR) {
+            return builder.format(input, outputType, output);
+        } else {
+            if (methodNode.inputs.length === 2) {
+                var factor = this.factor.build(builder, 'f');
+                return builder.format(method + '( ' + input + ', ' + factor + ' )', outputType, output);
+            } else {
+                return builder.format(method + '( ' + input + ' )', outputType, output);
+            }
+        }
+    };
+    ColorSpaceNode.prototype.fromEncoding = function (encoding) {
+        var components = ColorSpaceNode.getEncodingComponents(encoding);
+        this.method = 'LinearTo' + components[0];
+        this.factor = components[1];
+    };
+    ColorSpaceNode.prototype.fromDecoding = function (encoding) {
+        var components = ColorSpaceNode.getEncodingComponents(encoding);
+        this.method = components[0] + 'ToLinear';
+        this.factor = components[1];
+    };
+    ColorSpaceNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.input = source.input;
+        this.method = source.method;
+        return this;
+    };
+    ColorSpaceNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.input = this.input.toJSON(meta).uuid;
+            data.method = this.method;
+        }
+        return data;
+    };
+    return ColorSpaceNode;
+});
+define('skylark-threejs-ex/nodes/inputs/TextureNode',[
+    '../core/InputNode',
+    '../accessors/UVNode',
+    '../utils/ColorSpaceNode',
+    '../core/ExpressionNode'
+], function (
+    InputNode, 
+    UVNode, 
+    ColorSpaceNode, 
+    ExpressionNode
+) {
+    'use strict';
+    function TextureNode(value, uv, bias, project) {
+        InputNode.call(this, 'v4', { shared: true });
+        this.value = value;
+        this.uv = uv || new UVNode();
+        this.bias = bias;
+        this.project = project !== undefined ? project : false;
+    }
+    TextureNode.prototype = Object.create(InputNode.prototype);
+    TextureNode.prototype.constructor = TextureNode;
+    TextureNode.prototype.nodeType = 'Texture';
+    TextureNode.prototype.getTexture = function (builder, output) {
+        return InputNode.prototype.generate.call(this, builder, output, this.value.uuid, 't');
+    };
+    TextureNode.prototype.generate = function (builder, output) {
+        if (output === 'sampler2D') {
+            return this.getTexture(builder, output);
+        }
+        var tex = this.getTexture(builder, output), uv = this.uv.build(builder, this.project ? 'v4' : 'v2'), bias = this.bias ? this.bias.build(builder, 'f') : undefined;
+        if (bias === undefined && builder.context.bias) {
+            bias = builder.context.bias.setTexture(this).build(builder, 'f');
+        }
+        var method, code;
+        if (this.project)
+            method = 'texture2DProj';
+        else
+            method = bias ? 'tex2DBias' : 'tex2D';
+        if (bias)
+            code = method + '( ' + tex + ', ' + uv + ', ' + bias + ' )';
+        else
+            code = method + '( ' + tex + ', ' + uv + ' )';
+        var context = {
+            include: builder.isShader('vertex'),
+            ignoreCache: true
+        };
+        var outputType = this.getType(builder);
+        builder.addContext(context);
+        this.colorSpace = this.colorSpace || new ColorSpaceNode(new ExpressionNode('', outputType));
+        this.colorSpace.fromDecoding(builder.getTextureEncodingFromMap(this.value));
+        this.colorSpace.input.parse(code);
+        code = this.colorSpace.build(builder, outputType);
+        builder.removeContext();
+        return builder.format(code, outputType, output);
+    };
+    TextureNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        if (source.value)
+            this.value = source.value;
+        this.uv = source.uv;
+        if (source.bias)
+            this.bias = source.bias;
+        if (source.project !== undefined)
+            this.project = source.project;
+        return this;
+    };
+    TextureNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            if (this.value)
+                data.value = this.value.uuid;
+            data.uv = this.uv.toJSON(meta).uuid;
+            data.project = this.project;
+            if (this.bias)
+                data.bias = this.bias.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return TextureNode;
+});
+define('skylark-threejs-ex/nodes/accessors/PositionNode',[
+    '../core/TempNode',
+    '../core/NodeLib'
+], function (TempNode, NodeLib) {
+    'use strict';
+    function PositionNode(scope) {
+        TempNode.call(this, 'v3');
+        this.scope = scope || PositionNode.LOCAL;
+    }
+    PositionNode.LOCAL = 'local';
+    PositionNode.WORLD = 'world';
+    PositionNode.VIEW = 'view';
+    PositionNode.PROJECTION = 'projection';
+    PositionNode.prototype = Object.create(TempNode.prototype);
+    PositionNode.prototype.constructor = PositionNode;
+    PositionNode.prototype.nodeType = 'Position';
+    PositionNode.prototype.getType = function () {
+        switch (this.scope) {
+        case PositionNode.PROJECTION:
+            return 'v4';
+        }
+        return this.type;
+    };
+    PositionNode.prototype.getShared = function () {
+        switch (this.scope) {
+        case PositionNode.LOCAL:
+        case PositionNode.WORLD:
+            return false;
+        }
+        return true;
+    };
+    PositionNode.prototype.generate = function (builder, output) {
+        var result;
+        switch (this.scope) {
+        case PositionNode.LOCAL:
+            if (builder.isShader('vertex')) {
+                result = 'transformed';
+            } else {
+                builder.requires.position = true;
+                result = 'vPosition';
+            }
+            break;
+        case PositionNode.WORLD:
+            if (builder.isShader('vertex')) {
+                return '( modelMatrix * vec4( transformed, 1.0 ) ).xyz';
+            } else {
+                builder.requires.worldPosition = true;
+                result = 'vWPosition';
+            }
+            break;
+        case PositionNode.VIEW:
+            result = builder.isShader('vertex') ? '-mvPosition.xyz' : 'vViewPosition';
+            break;
+        case PositionNode.PROJECTION:
+            result = builder.isShader('vertex') ? '( projectionMatrix * modelViewMatrix * vec4( position, 1.0 ) )' : 'vec4( 0.0 )';
+            break;
+        }
+        return builder.format(result, this.getType(builder), output);
+    };
+    PositionNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.scope = source.scope;
+        return this;
+    };
+    PositionNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.scope = this.scope;
+        }
+        return data;
+    };
+    NodeLib.addKeyword('position', function () {
+        return new PositionNode();
+    });
+    NodeLib.addKeyword('worldPosition', function () {
+        return new PositionNode(PositionNode.WORLD);
+    });
+    NodeLib.addKeyword('viewPosition', function () {
+        return new PositionNode(PositionNode.VIEW);
+    });
+    return PositionNode;
+});
+define('skylark-threejs-ex/nodes/accessors/NormalNode',[
+    '../core/TempNode',
+    '../core/NodeLib'
+], function (TempNode, NodeLib) {
+    'use strict';
+    function NormalNode(scope) {
+        TempNode.call(this, 'v3');
+        this.scope = scope || NormalNode.VIEW;
+    }
+    NormalNode.LOCAL = 'local';
+    NormalNode.WORLD = 'world';
+    NormalNode.VIEW = 'view';
+    NormalNode.prototype = Object.create(TempNode.prototype);
+    NormalNode.prototype.constructor = NormalNode;
+    NormalNode.prototype.nodeType = 'Normal';
+    NormalNode.prototype.getShared = function () {
+        return this.scope === NormalNode.WORLD;
+    };
+    NormalNode.prototype.build = function (builder, output, uuid, ns) {
+        var contextNormal = builder.context[this.scope + 'Normal'];
+        if (contextNormal) {
+            return contextNormal.build(builder, output, uuid, ns);
+        }
+        return TempNode.prototype.build.call(this, builder, output, uuid);
+    };
+    NormalNode.prototype.generate = function (builder, output) {
+        var result;
+        switch (this.scope) {
+        case NormalNode.VIEW:
+            if (builder.isShader('vertex'))
+                result = 'transformedNormal';
+            else
+                result = 'geometryNormal';
+            break;
+        case NormalNode.LOCAL:
+            if (builder.isShader('vertex')) {
+                result = 'objectNormal';
+            } else {
+                builder.requires.normal = true;
+                result = 'vObjectNormal';
+            }
+            break;
+        case NormalNode.WORLD:
+            if (builder.isShader('vertex')) {
+                result = 'inverseTransformDirection( transformedNormal, viewMatrix ).xyz';
+            } else {
+                builder.requires.worldNormal = true;
+                result = 'vWNormal';
+            }
+            break;
+        }
+        return builder.format(result, this.getType(builder), output);
+    };
+    NormalNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.scope = source.scope;
+        return this;
+    };
+    NormalNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.scope = this.scope;
+        }
+        return data;
+    };
+    NodeLib.addKeyword('viewNormal', function () {
+        return new NormalNode(NormalNode.VIEW);
+    });
+    NodeLib.addKeyword('localNormal', function () {
+        return new NormalNode(NormalNode.NORMAL);
+    });
+    NodeLib.addKeyword('worldNormal', function () {
+        return new NormalNode(NormalNode.WORLD);
+    });
+    return NormalNode;
+});
+define('skylark-threejs-ex/nodes/accessors/ReflectNode',[
+    '../core/TempNode',
+    './PositionNode',
+    './NormalNode'
+], function (TempNode, PositionNode, NormalNode) {
+    'use strict';
+    function ReflectNode(scope) {
+        TempNode.call(this, 'v3');
+        this.scope = scope || ReflectNode.CUBE;
+    }
+    ReflectNode.CUBE = 'cube';
+    ReflectNode.SPHERE = 'sphere';
+    ReflectNode.VECTOR = 'vector';
+    ReflectNode.prototype = Object.create(TempNode.prototype);
+    ReflectNode.prototype.constructor = ReflectNode;
+    ReflectNode.prototype.nodeType = 'Reflect';
+    ReflectNode.prototype.getUnique = function (builder) {
+        return !builder.context.viewNormal;
+    };
+    ReflectNode.prototype.getType = function () {
+        switch (this.scope) {
+        case ReflectNode.SPHERE:
+            return 'v2';
+        }
+        return this.type;
+    };
+    ReflectNode.prototype.generate = function (builder, output) {
+        var isUnique = this.getUnique(builder);
+        if (builder.isShader('fragment')) {
+            var result;
+            switch (this.scope) {
+            case ReflectNode.VECTOR:
+                var viewNormalNode = new NormalNode(NormalNode.VIEW);
+                var roughnessNode = builder.context.roughness;
+                var viewNormal = viewNormalNode.build(builder, 'v3');
+                var viewPosition = new PositionNode(PositionNode.VIEW).build(builder, 'v3');
+                var roughness = roughnessNode ? roughnessNode.build(builder, 'f') : undefined;
+                var method = `reflect( -normalize( ${ viewPosition } ), ${ viewNormal } )`;
+                if (roughness) {
+                    method = `normalize( mix( ${ method }, ${ viewNormal }, ${ roughness } * ${ roughness } ) )`;
+                }
+                var code = `inverseTransformDirection( ${ method }, viewMatrix )`;
+                if (isUnique) {
+                    builder.addNodeCode(`vec3 reflectVec = ${ code };`);
+                    result = 'reflectVec';
+                } else {
+                    result = code;
+                }
+                break;
+            case ReflectNode.CUBE:
+                var reflectVec = new ReflectNode(ReflectNode.VECTOR).build(builder, 'v3');
+                var code = 'vec3( -' + reflectVec + '.x, ' + reflectVec + '.yz )';
+                if (isUnique) {
+                    builder.addNodeCode(`vec3 reflectCubeVec = ${ code };`);
+                    result = 'reflectCubeVec';
+                } else {
+                    result = code;
+                }
+                break;
+            case ReflectNode.SPHERE:
+                var reflectVec = new ReflectNode(ReflectNode.VECTOR).build(builder, 'v3');
+                var code = 'normalize( ( viewMatrix * vec4( ' + reflectVec + ', 0.0 ) ).xyz + vec3( 0.0, 0.0, 1.0 ) ).xy * 0.5 + 0.5';
+                if (isUnique) {
+                    builder.addNodeCode(`vec2 reflectSphereVec = ${ code };`);
+                    result = 'reflectSphereVec';
+                } else {
+                    result = code;
+                }
+                break;
+            }
+            return builder.format(result, this.getType(builder), output);
+        } else {
+            console.warn('THREE.ReflectNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec3( 0.0 )', this.type, output);
+        }
+    };
+    ReflectNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.scope = this.scope;
+        }
+        return data;
+    };
+    return ReflectNode;
+});
+define('skylark-threejs-ex/nodes/inputs/CubeTextureNode',[
+    '../core/InputNode',
+    '../accessors/ReflectNode',
+    '../utils/ColorSpaceNode',
+    '../core/ExpressionNode'
+], function (InputNode, ReflectNode, ColorSpaceNode, ExpressionNode) {
+    'use strict';
+    function CubeTextureNode(value, uv, bias) {
+        InputNode.call(this, 'v4', { shared: true });
+        this.value = value;
+        this.uv = uv || new ReflectNode();
+        this.bias = bias;
+    }
+    CubeTextureNode.prototype = Object.create(InputNode.prototype);
+    CubeTextureNode.prototype.constructor = CubeTextureNode;
+    CubeTextureNode.prototype.nodeType = 'CubeTexture';
+    CubeTextureNode.prototype.getTexture = function (builder, output) {
+        return InputNode.prototype.generate.call(this, builder, output, this.value.uuid, 'tc');
+    };
+    CubeTextureNode.prototype.generate = function (builder, output) {
+        if (output === 'samplerCube') {
+            return this.getTexture(builder, output);
+        }
+        var cubetex = this.getTexture(builder, output);
+        var uv = this.uv.build(builder, 'v3');
+        var bias = this.bias ? this.bias.build(builder, 'f') : undefined;
+        if (bias === undefined && builder.context.bias) {
+            bias = builder.context.bias.setTexture(this).build(builder, 'f');
+        }
+        var code;
+        if (bias)
+            code = 'texCubeBias( ' + cubetex + ', ' + uv + ', ' + bias + ' )';
+        else
+            code = 'texCube( ' + cubetex + ', ' + uv + ' )';
+        var context = {
+            include: builder.isShader('vertex'),
+            ignoreCache: true
+        };
+        var outputType = this.getType(builder);
+        builder.addContext(context);
+        this.colorSpace = this.colorSpace || new ColorSpaceNode(new ExpressionNode('', outputType));
+        this.colorSpace.fromDecoding(builder.getTextureEncodingFromMap(this.value));
+        this.colorSpace.input.parse(code);
+        code = this.colorSpace.build(builder, outputType);
+        builder.removeContext();
+        return builder.format(code, outputType, output);
+    };
+    CubeTextureNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        if (source.value)
+            this.value = source.value;
+        this.uv = source.uv;
+        if (source.bias)
+            this.bias = source.bias;
+        return this;
+    };
+    CubeTextureNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.uuid;
+            data.uv = this.uv.toJSON(meta).uuid;
+            if (this.bias)
+                data.bias = this.bias.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return CubeTextureNode;
+});
+define('skylark-threejs-ex/nodes/math/OperatorNode',[
+    '../core/TempNode'
+], function (
+    TempNode
+) {
+    'use strict';
+    function OperatorNode(a, b, op) {
+        TempNode.call(this);
+        this.a = a;
+        this.b = b;
+        this.op = op;
+    }
+    OperatorNode.ADD = '+';
+    OperatorNode.SUB = '-';
+    OperatorNode.MUL = '*';
+    OperatorNode.DIV = '/';
+    OperatorNode.prototype = Object.create(TempNode.prototype);
+    OperatorNode.prototype.constructor = OperatorNode;
+    OperatorNode.prototype.nodeType = 'Operator';
+    OperatorNode.prototype.getType = function (builder) {
+        var a = this.a.getType(builder), b = this.b.getType(builder);
+        if (builder.isTypeMatrix(a)) {
+            return 'v4';
+        } else if (builder.getTypeLength(b) > builder.getTypeLength(a)) {
+            return b;
+        }
+        return a;
+    };
+    OperatorNode.prototype.generate = function (builder, output) {
+        var type = this.getType(builder);
+        var a = this.a.build(builder, type), b = this.b.build(builder, type);
+        return builder.format('( ' + a + ' ' + this.op + ' ' + b + ' )', type, output);
+    };
+    OperatorNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.a = source.a;
+        this.b = source.b;
+        this.op = source.op;
+        return this;
+    };
+    OperatorNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.a = this.a.toJSON(meta).uuid;
+            data.b = this.b.toJSON(meta).uuid;
+            data.op = this.op;
+        }
+        return data;
+    };
+    return OperatorNode;
+});
+define('skylark-threejs-ex/nodes/math/MathNode',[
+    '../core/TempNode'
+], function (
+    TempNode
+) {
+    'use strict';
+    function MathNode(a, bOrMethod, cOrMethod, method) {
+        TempNode.call(this);
+        this.a = a;
+        typeof bOrMethod !== 'string' ? this.b = bOrMethod : method = bOrMethod;
+        typeof cOrMethod !== 'string' ? this.c = cOrMethod : method = cOrMethod;
+        this.method = method;
+    }
+    MathNode.RAD = 'radians';
+    MathNode.DEG = 'degrees';
+    MathNode.EXP = 'exp';
+    MathNode.EXP2 = 'exp2';
+    MathNode.LOG = 'log';
+    MathNode.LOG2 = 'log2';
+    MathNode.SQRT = 'sqrt';
+    MathNode.INV_SQRT = 'inversesqrt';
+    MathNode.FLOOR = 'floor';
+    MathNode.CEIL = 'ceil';
+    MathNode.NORMALIZE = 'normalize';
+    MathNode.FRACT = 'fract';
+    MathNode.SATURATE = 'saturate';
+    MathNode.SIN = 'sin';
+    MathNode.COS = 'cos';
+    MathNode.TAN = 'tan';
+    MathNode.ASIN = 'asin';
+    MathNode.ACOS = 'acos';
+    MathNode.ARCTAN = 'atan';
+    MathNode.ABS = 'abs';
+    MathNode.SIGN = 'sign';
+    MathNode.LENGTH = 'length';
+    MathNode.NEGATE = 'negate';
+    MathNode.INVERT = 'invert';
+    MathNode.MIN = 'min';
+    MathNode.MAX = 'max';
+    MathNode.MOD = 'mod';
+    MathNode.STEP = 'step';
+    MathNode.REFLECT = 'reflect';
+    MathNode.DISTANCE = 'distance';
+    MathNode.DOT = 'dot';
+    MathNode.CROSS = 'cross';
+    MathNode.POW = 'pow';
+    MathNode.MIX = 'mix';
+    MathNode.CLAMP = 'clamp';
+    MathNode.REFRACT = 'refract';
+    MathNode.SMOOTHSTEP = 'smoothstep';
+    MathNode.FACEFORWARD = 'faceforward';
+    MathNode.prototype = Object.create(TempNode.prototype);
+    MathNode.prototype.constructor = MathNode;
+    MathNode.prototype.nodeType = 'Math';
+    MathNode.prototype.getNumInputs = function () {
+        switch (this.method) {
+        case MathNode.MIX:
+        case MathNode.CLAMP:
+        case MathNode.REFRACT:
+        case MathNode.SMOOTHSTEP:
+        case MathNode.FACEFORWARD:
+            return 3;
+        case MathNode.MIN:
+        case MathNode.MAX:
+        case MathNode.MOD:
+        case MathNode.STEP:
+        case MathNode.REFLECT:
+        case MathNode.DISTANCE:
+        case MathNode.DOT:
+        case MathNode.CROSS:
+        case MathNode.POW:
+            return 2;
+        default:
+            return 1;
+        }
+    };
+    MathNode.prototype.getInputType = function (builder) {
+        var a = builder.getTypeLength(this.a.getType(builder));
+        var b = this.b ? builder.getTypeLength(this.b.getType(builder)) : 0;
+        var c = this.c ? builder.getTypeLength(this.c.getType(builder)) : 0;
+        if (a > b && a > c) {
+            return this.a.getType(builder);
+        } else if (b > c) {
+            return this.b.getType(builder);
+        }
+        return this.c.getType(builder);
+    };
+    MathNode.prototype.getType = function (builder) {
+        switch (this.method) {
+        case MathNode.LENGTH:
+        case MathNode.DISTANCE:
+        case MathNode.DOT:
+            return 'f';
+        case MathNode.CROSS:
+            return 'v3';
+        }
+        return this.getInputType(builder);
+    };
+    MathNode.prototype.generate = function (builder, output) {
+        var a, b, c, al = this.a ? builder.getTypeLength(this.a.getType(builder)) : 0, bl = this.b ? builder.getTypeLength(this.b.getType(builder)) : 0, cl = this.c ? builder.getTypeLength(this.c.getType(builder)) : 0, inputType = this.getInputType(builder), nodeType = this.getType(builder);
+        switch (this.method) {
+        case MathNode.NEGATE:
+            return builder.format('( -' + this.a.build(builder, inputType) + ' )', inputType, output);
+        case MathNode.INVERT:
+            return builder.format('( 1.0 - ' + this.a.build(builder, inputType) + ' )', inputType, output);
+        case MathNode.CROSS:
+            a = this.a.build(builder, 'v3');
+            b = this.b.build(builder, 'v3');
+            break;
+        case MathNode.STEP:
+            a = this.a.build(builder, al === 1 ? 'f' : inputType);
+            b = this.b.build(builder, inputType);
+            break;
+        case MathNode.MIN:
+        case MathNode.MAX:
+        case MathNode.MOD:
+            a = this.a.build(builder, inputType);
+            b = this.b.build(builder, bl === 1 ? 'f' : inputType);
+            break;
+        case MathNode.REFRACT:
+            a = this.a.build(builder, inputType);
+            b = this.b.build(builder, inputType);
+            c = this.c.build(builder, 'f');
+            break;
+        case MathNode.MIX:
+            a = this.a.build(builder, inputType);
+            b = this.b.build(builder, inputType);
+            c = this.c.build(builder, cl === 1 ? 'f' : inputType);
+            break;
+        default:
+            a = this.a.build(builder, inputType);
+            if (this.b)
+                b = this.b.build(builder, inputType);
+            if (this.c)
+                c = this.c.build(builder, inputType);
+            break;
+        }
+        var params = [];
+        params.push(a);
+        if (b)
+            params.push(b);
+        if (c)
+            params.push(c);
+        var numInputs = this.getNumInputs(builder);
+        if (params.length !== numInputs) {
+            throw Error(`Arguments not match used in "${ this.method }". Require ${ numInputs }, currently ${ params.length }.`);
+        }
+        return builder.format(this.method + '( ' + params.join(', ') + ' )', nodeType, output);
+    };
+    MathNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.a = source.a;
+        this.b = source.b;
+        this.c = source.c;
+        this.method = source.method;
+        return this;
+    };
+    MathNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.a = this.a.toJSON(meta).uuid;
+            if (this.b)
+                data.b = this.b.toJSON(meta).uuid;
+            if (this.c)
+                data.c = this.c.toJSON(meta).uuid;
+            data.method = this.method;
+        }
+        return data;
+    };
+    return MathNode;
+});
+define('skylark-threejs-ex/nodes/misc/TextureCubeUVNode',[
+    '../core/TempNode',
+    '../core/ConstNode',
+    '../core/StructNode',
+    '../core/FunctionNode',
+    '../core/FunctionCallNode',
+    '../core/ExpressionNode',
+    '../inputs/FloatNode',
+    '../math/OperatorNode',
+    '../math/MathNode',
+    '../utils/ColorSpaceNode'
+], function (
+    TempNode, 
+    ConstNode, 
+    StructNode, 
+    FunctionNode, 
+    FunctionCallNode, 
+    ExpressionNode, 
+    FloatNode, 
+    OperatorNode, 
+    MathNode, 
+    ColorSpaceNode
+) {
+    'use strict';
+    function TextureCubeUVNode(value, uv, bias) {
+        TempNode.call(this, 'v4');
+        this.value = value, this.uv = uv;
+        this.bias = bias;
+    }
+    TextureCubeUVNode.Nodes = function () {
+        var TextureCubeUVData = new StructNode(`struct TextureCubeUVData {
+			vec4 tl;
+			vec4 tr;
+			vec4 br;
+			vec4 bl;
+			vec2 f;
+		}`);
+        var cubeUV_maxMipLevel = new ConstNode(`float cubeUV_maxMipLevel 8.0`, true);
+        var cubeUV_minMipLevel = new ConstNode(`float cubeUV_minMipLevel 4.0`, true);
+        var cubeUV_maxTileSize = new ConstNode(`float cubeUV_maxTileSize 256.0`, true);
+        var cubeUV_minTileSize = new ConstNode(`float cubeUV_minTileSize 16.0`, true);
+        var getFace = new FunctionNode(`float getFace(vec3 direction) {
+				vec3 absDirection = abs(direction);
+				float face = -1.0;
+				if (absDirection.x > absDirection.z) {
+					if (absDirection.x > absDirection.y)
+						face = direction.x > 0.0 ? 0.0 : 3.0;
+					else
+						face = direction.y > 0.0 ? 1.0 : 4.0;
+				} else {
+					if (absDirection.z > absDirection.y)
+						face = direction.z > 0.0 ? 2.0 : 5.0;
+					else
+						face = direction.y > 0.0 ? 1.0 : 4.0;
+				}
+				return face;
+		}`);
+        getFace.useKeywords = false;
+        var getUV = new FunctionNode(`vec2 getUV(vec3 direction, float face) {
+				vec2 uv;
+				if (face == 0.0) {
+					uv = vec2(-direction.z, direction.y) / abs(direction.x);
+				} else if (face == 1.0) {
+					uv = vec2(direction.x, -direction.z) / abs(direction.y);
+				} else if (face == 2.0) {
+					uv = direction.xy / abs(direction.z);
+				} else if (face == 3.0) {
+					uv = vec2(direction.z, direction.y) / abs(direction.x);
+				} else if (face == 4.0) {
+					uv = direction.xz / abs(direction.y);
+				} else {
+					uv = vec2(-direction.x, direction.y) / abs(direction.z);
+				}
+				return 0.5 * (uv + 1.0);
+		}`);
+        getUV.useKeywords = false;
+        var bilinearCubeUV = new FunctionNode(`TextureCubeUVData bilinearCubeUV(sampler2D envMap, vec3 direction, float mipInt) {
+
+			float face = getFace(direction);
+			float filterInt = max(cubeUV_minMipLevel - mipInt, 0.0);
+			mipInt = max(mipInt, cubeUV_minMipLevel);
+			float faceSize = exp2(mipInt);
+
+			float texelSize = 1.0 / (3.0 * cubeUV_maxTileSize);
+
+			vec2 uv = getUV(direction, face) * (faceSize - 1.0);
+			vec2 f = fract(uv);
+			uv += 0.5 - f;
+			if (face > 2.0) {
+				uv.y += faceSize;
+				face -= 3.0;
+			}
+			uv.x += face * faceSize;
+			if(mipInt < cubeUV_maxMipLevel){
+				uv.y += 2.0 * cubeUV_maxTileSize;
+			}
+			uv.y += filterInt * 2.0 * cubeUV_minTileSize;
+			uv.x += 3.0 * max(0.0, cubeUV_maxTileSize - 2.0 * faceSize);
+			uv *= texelSize;
+ 
+			vec4 tl = texture2D(envMap, uv);
+			uv.x += texelSize;
+			vec4 tr = texture2D(envMap, uv);
+			uv.y += texelSize;
+			vec4 br = texture2D(envMap, uv);
+			uv.x -= texelSize;
+			vec4 bl = texture2D(envMap, uv);
+
+			return TextureCubeUVData( tl, tr, br, bl, f );
+		}`, [
+            TextureCubeUVData,
+            getFace,
+            getUV,
+            cubeUV_maxMipLevel,
+            cubeUV_minMipLevel,
+            cubeUV_maxTileSize,
+            cubeUV_minTileSize
+        ]);
+        bilinearCubeUV.useKeywords = false;
+        var r0 = new ConstNode(`float r0 1.0`, true);
+        var v0 = new ConstNode(`float v0 0.339`, true);
+        var m0 = new ConstNode(`float m0 -2.0`, true);
+        var r1 = new ConstNode(`float r1 0.8`, true);
+        var v1 = new ConstNode(`float v1 0.276`, true);
+        var m1 = new ConstNode(`float m1 -1.0`, true);
+        var r4 = new ConstNode(`float r4 0.4`, true);
+        var v4 = new ConstNode(`float v4 0.046`, true);
+        var m4 = new ConstNode(`float m4 2.0`, true);
+        var r5 = new ConstNode(`float r5 0.305`, true);
+        var v5 = new ConstNode(`float v5 0.016`, true);
+        var m5 = new ConstNode(`float m5 3.0`, true);
+        var r6 = new ConstNode(`float r6 0.21`, true);
+        var v6 = new ConstNode(`float v6 0.0038`, true);
+        var m6 = new ConstNode(`float m6 4.0`, true);
+        var defines = [
+            r0,
+            v0,
+            m0,
+            r1,
+            v1,
+            m1,
+            r4,
+            v4,
+            m4,
+            r5,
+            v5,
+            m5,
+            r6,
+            v6,
+            m6
+        ];
+        var roughnessToMip = new FunctionNode(`float roughnessToMip(float roughness) {
+			float mip = 0.0;
+			if (roughness >= r1) {
+				mip = (r0 - roughness) * (m1 - m0) / (r0 - r1) + m0;
+			} else if (roughness >= r4) {
+				mip = (r1 - roughness) * (m4 - m1) / (r1 - r4) + m1;
+			} else if (roughness >= r5) {
+				mip = (r4 - roughness) * (m5 - m4) / (r4 - r5) + m4;
+			} else if (roughness >= r6) {
+				mip = (r5 - roughness) * (m6 - m5) / (r5 - r6) + m5;
+			} else {
+				mip = -2.0 * log2(1.16 * roughness);// 1.16 = 1.79^0.25
+			}
+			return mip;
+		}`, defines);
+        return {
+            bilinearCubeUV: bilinearCubeUV,
+            roughnessToMip: roughnessToMip,
+            m0: m0,
+            cubeUV_maxMipLevel: cubeUV_maxMipLevel
+        };
+    }();
+    TextureCubeUVNode.prototype = Object.create(TempNode.prototype);
+    TextureCubeUVNode.prototype.constructor = TextureCubeUVNode;
+    TextureCubeUVNode.prototype.nodeType = 'TextureCubeUV';
+    TextureCubeUVNode.prototype.bilinearCubeUV = function (builder, texture, uv, mipInt) {
+        var bilinearCubeUV = new FunctionCallNode(TextureCubeUVNode.Nodes.bilinearCubeUV, [
+            texture,
+            uv,
+            mipInt
+        ]);
+        this.colorSpaceTL = this.colorSpaceTL || new ColorSpaceNode(new ExpressionNode('', 'v4'));
+        this.colorSpaceTL.fromDecoding(builder.getTextureEncodingFromMap(this.value.value));
+        this.colorSpaceTL.input.parse(bilinearCubeUV.build(builder) + '.tl');
+        this.colorSpaceTR = this.colorSpaceTR || new ColorSpaceNode(new ExpressionNode('', 'v4'));
+        this.colorSpaceTR.fromDecoding(builder.getTextureEncodingFromMap(this.value.value));
+        this.colorSpaceTR.input.parse(bilinearCubeUV.build(builder) + '.tr');
+        this.colorSpaceBL = this.colorSpaceBL || new ColorSpaceNode(new ExpressionNode('', 'v4'));
+        this.colorSpaceBL.fromDecoding(builder.getTextureEncodingFromMap(this.value.value));
+        this.colorSpaceBL.input.parse(bilinearCubeUV.build(builder) + '.bl');
+        this.colorSpaceBR = this.colorSpaceBR || new ColorSpaceNode(new ExpressionNode('', 'v4'));
+        this.colorSpaceBR.fromDecoding(builder.getTextureEncodingFromMap(this.value.value));
+        this.colorSpaceBR.input.parse(bilinearCubeUV.build(builder) + '.br');
+        var context = {
+            include: builder.isShader('vertex'),
+            ignoreCache: true
+        };
+        builder.addContext(context);
+        this.colorSpaceTLExp = new ExpressionNode(this.colorSpaceTL.build(builder, 'v4'), 'v4');
+        this.colorSpaceTRExp = new ExpressionNode(this.colorSpaceTR.build(builder, 'v4'), 'v4');
+        this.colorSpaceBLExp = new ExpressionNode(this.colorSpaceBL.build(builder, 'v4'), 'v4');
+        this.colorSpaceBRExp = new ExpressionNode(this.colorSpaceBR.build(builder, 'v4'), 'v4');
+        builder.removeContext();
+        var output = new ExpressionNode(`mix( mix( cubeUV_TL, cubeUV_TR, cubeUV.f.x ), mix( cubeUV_BL, cubeUV_BR, cubeUV.f.x ), cubeUV.f.y )`, 'v4');
+        output.keywords['cubeUV_TL'] = this.colorSpaceTLExp;
+        output.keywords['cubeUV_TR'] = this.colorSpaceTRExp;
+        output.keywords['cubeUV_BL'] = this.colorSpaceBLExp;
+        output.keywords['cubeUV_BR'] = this.colorSpaceBRExp;
+        output.keywords['cubeUV'] = bilinearCubeUV;
+        return output;
+    };
+    TextureCubeUVNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            var uv = this.uv;
+            var bias = this.bias || builder.context.roughness;
+            var mipV = new FunctionCallNode(TextureCubeUVNode.Nodes.roughnessToMip, [bias]);
+            var mip = new MathNode(mipV, TextureCubeUVNode.Nodes.m0, TextureCubeUVNode.Nodes.cubeUV_maxMipLevel, MathNode.CLAMP);
+            var mipInt = new MathNode(mip, MathNode.FLOOR);
+            var mipF = new MathNode(mip, MathNode.FRACT);
+            var color0 = this.bilinearCubeUV(builder, this.value, uv, mipInt);
+            var color1 = this.bilinearCubeUV(builder, this.value, uv, new OperatorNode(mipInt, new FloatNode(1).setReadonly(true), OperatorNode.ADD));
+            var color1Mix = new MathNode(color0, color1, mipF, MathNode.MIX);
+            return builder.format(color1Mix.build(builder), 'v4', output);
+        } else {
+            console.warn('THREE.TextureCubeUVNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec4( 0.0 )', this.getType(builder), output);
+        }
+    };
+    TextureCubeUVNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+            data.uv = this.uv.toJSON(meta).uuid;
+            data.bias = this.bias.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return TextureCubeUVNode;
+});
+define('skylark-threejs-ex/nodes/misc/TextureCubeNode',[
+    '../core/TempNode',
+    '../inputs/FloatNode',
+    './TextureCubeUVNode',
+    '../accessors/ReflectNode',
+    '../accessors/NormalNode'
+], function (
+    TempNode, 
+    FloatNode, 
+    TextureCubeNode, 
+    ReflectNode, 
+    NormalNode
+) {
+    'use strict';
+    function TextureCubeNode(value, uv, bias) {
+        TempNode.call(this, 'v4');
+        this.value = value;
+        this.radianceNode = new TextureCubeUVNode(this.value, uv || new ReflectNode(ReflectNode.VECTOR), bias);
+        this.irradianceNode = new TextureCubeUVNode(this.value, new NormalNode(NormalNode.WORLD), new FloatNode(1).setReadonly(true));
+    }
+    TextureCubeNode.prototype = Object.create(TempNode.prototype);
+    TextureCubeNode.prototype.constructor = TextureCubeNode;
+    TextureCubeNode.prototype.nodeType = 'TextureCube';
+    TextureCubeNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            builder.require('irradiance');
+            if (builder.context.bias) {
+                builder.context.bias.setTexture(this.value);
+            }
+            var scopeNode = builder.slot === 'irradiance' ? this.irradianceNode : this.radianceNode;
+            return scopeNode.build(builder, output);
+        } else {
+            console.warn('THREE.TextureCubeNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec4( 0.0 )', this.getType(builder), output);
+        }
+    };
+    TextureCubeNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        return this;
+    };
+    TextureCubeNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return TextureCubeNode;
+});
+define('skylark-threejs-ex/nodes/core/NodeBuilder',[
+    "skylark-threejs",
+    './NodeUniform',
+    './NodeUtils',
+    './NodeLib',
+    './FunctionNode',
+    './ConstNode',
+    './StructNode',
+    '../inputs/Vector2Node',
+    '../inputs/Vector3Node',
+    '../inputs/Vector4Node',
+    '../inputs/TextureNode',
+    '../inputs/CubeTextureNode',
+    '../misc/TextureCubeNode'
+], function (
+    THREE, 
+    NodeUniform, 
+    NodeUtils, 
+    NodeLib, 
+    FunctionNode, 
+    ConstNode, 
+    StructNode, 
+    Vector2Node, 
+    Vector3Node, 
+    Vector4Node, 
+    TextureNode, 
+    CubeTextureNode, 
+    TextureCubeNode
+) {
+    'use strict';
+    var elements = NodeUtils.elements, constructors = [
+            'float',
+            'vec2',
+            'vec3',
+            'vec4'
+        ], convertFormatToType = {
+            float: 'f',
+            vec2: 'v2',
+            vec3: 'v3',
+            vec4: 'v4',
+            mat4: 'v4',
+            int: 'i',
+            bool: 'b'
+        }, convertTypeToFormat = {
+            t: 'sampler2D',
+            tc: 'samplerCube',
+            b: 'bool',
+            i: 'int',
+            f: 'float',
+            c: 'vec3',
+            v2: 'vec2',
+            v3: 'vec3',
+            v4: 'vec4',
+            m3: 'mat3',
+            m4: 'mat4'
+        };
+    function NodeBuilder() {
+        this.slots = [];
+        this.caches = [];
+        this.contexts = [];
+        this.keywords = {};
+        this.nodeData = {};
+        this.requires = {
+            uv: [],
+            color: [],
+            lights: false,
+            fog: false
+        };
+        this.includes = {
+            consts: [],
+            functions: [],
+            structs: []
+        };
+        this.attributes = {};
+        this.prefixCode = [
+            '#ifdef TEXTURE_LOD_EXT',
+            '\t#define texCube(a, b) textureCube(a, b)',
+            '\t#define texCubeBias(a, b, c) textureCubeLodEXT(a, b, c)',
+            '\t#define tex2D(a, b) texture2D(a, b)',
+            '\t#define tex2DBias(a, b, c) texture2DLodEXT(a, b, c)',
+            '#else',
+            '\t#define texCube(a, b) textureCube(a, b)',
+            '\t#define texCubeBias(a, b, c) textureCube(a, b, c)',
+            '\t#define tex2D(a, b) texture2D(a, b)',
+            '\t#define tex2DBias(a, b, c) texture2D(a, b, c)',
+            '#endif',
+            '#include <packing>',
+            '#include <common>'
+        ].join('\n');
+        this.parsCode = {
+            vertex: '',
+            fragment: ''
+        };
+        this.code = {
+            vertex: '',
+            fragment: ''
+        };
+        this.nodeCode = {
+            vertex: '',
+            fragment: ''
+        };
+        this.resultCode = {
+            vertex: '',
+            fragment: ''
+        };
+        this.finalCode = {
+            vertex: '',
+            fragment: ''
+        };
+        this.inputs = {
+            uniforms: {
+                list: [],
+                vertex: [],
+                fragment: []
+            },
+            vars: {
+                varying: [],
+                vertex: [],
+                fragment: []
+            }
+        };
+        this.defines = {};
+        this.uniforms = {};
+        this.extensions = {};
+        this.updaters = [];
+        this.nodes = [];
+        this.analyzing = false;
+    }
+    NodeBuilder.prototype = {
+        constructor: NodeBuilder,
+        build: function (vertex, fragment) {
+            this.buildShader('vertex', vertex);
+            this.buildShader('fragment', fragment);
+            for (var i = 0; i < this.requires.uv.length; i++) {
+                if (this.requires.uv[i]) {
+                    var uvIndex = i > 0 ? i + 1 : '';
+                    this.addVaryCode('varying vec2 vUv' + uvIndex + ';');
+                    if (i > 0) {
+                        this.addVertexParsCode('attribute vec2 uv' + uvIndex + ';');
+                    }
+                    this.addVertexFinalCode('vUv' + uvIndex + ' = uv' + uvIndex + ';');
+                }
+            }
+            if (this.requires.color[0]) {
+                this.addVaryCode('varying vec4 vColor;');
+                this.addVertexParsCode('attribute vec4 color;');
+                this.addVertexFinalCode('vColor = color;');
+            }
+            if (this.requires.color[1]) {
+                this.addVaryCode('varying vec4 vColor2;');
+                this.addVertexParsCode('attribute vec4 color2;');
+                this.addVertexFinalCode('vColor2 = color2;');
+            }
+            if (this.requires.position) {
+                this.addVaryCode('varying vec3 vPosition;');
+                this.addVertexFinalCode('vPosition = transformed;');
+            }
+            if (this.requires.worldPosition) {
+                this.addVaryCode('varying vec3 vWPosition;');
+                this.addVertexFinalCode('vWPosition = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+            }
+            if (this.requires.normal) {
+                this.addVaryCode('varying vec3 vObjectNormal;');
+                this.addVertexFinalCode('vObjectNormal = normal;');
+            }
+            if (this.requires.worldNormal) {
+                this.addVaryCode('varying vec3 vWNormal;');
+                this.addVertexFinalCode('vWNormal = inverseTransformDirection( transformedNormal, viewMatrix ).xyz;');
+            }
+            return this;
+        },
+        buildShader: function (shader, node) {
+            this.resultCode[shader] = node.build(this.setShader(shader), 'v4');
+        },
+        setMaterial: function (material, renderer) {
+            this.material = material;
+            this.renderer = renderer;
+            this.requires.lights = material.lights;
+            this.requires.fog = material.fog;
+            this.mergeDefines(material.defines);
+            return this;
+        },
+        addFlow: function (slot, cache, context) {
+            return this.addSlot(slot).addCache(cache).addContext(context);
+        },
+        removeFlow: function () {
+            return this.removeSlot().removeCache().removeContext();
+        },
+        addCache: function (name) {
+            this.cache = name || '';
+            this.caches.push(this.cache);
+            return this;
+        },
+        removeCache: function () {
+            this.caches.pop();
+            this.cache = this.caches[this.caches.length - 1] || '';
+            return this;
+        },
+        addContext: function (context) {
+            this.context = Object.assign({}, this.context, context);
+            this.context.extra = this.context.extra || {};
+            this.contexts.push(this.context);
+            return this;
+        },
+        removeContext: function () {
+            this.contexts.pop();
+            this.context = this.contexts[this.contexts.length - 1] || {};
+            return this;
+        },
+        addSlot: function (name) {
+            this.slot = name || '';
+            this.slots.push(this.slot);
+            return this;
+        },
+        removeSlot: function () {
+            this.slots.pop();
+            this.slot = this.slots[this.slots.length - 1] || '';
+            return this;
+        },
+        addVertexCode: function (code) {
+            this.addCode(code, 'vertex');
+        },
+        addFragmentCode: function (code) {
+            this.addCode(code, 'fragment');
+        },
+        addCode: function (code, shader) {
+            this.code[shader || this.shader] += code + '\n';
+        },
+        addVertexNodeCode: function (code) {
+            this.addNodeCode(code, 'vertex');
+        },
+        addFragmentNodeCode: function (code) {
+            this.addNodeCode(code, 'fragment');
+        },
+        addNodeCode: function (code, shader) {
+            this.nodeCode[shader || this.shader] += code + '\n';
+        },
+        clearNodeCode: function (shader) {
+            shader = shader || this.shader;
+            var code = this.nodeCode[shader];
+            this.nodeCode[shader] = '';
+            return code;
+        },
+        clearVertexNodeCode: function () {
+            return this.clearNodeCode('vertex');
+        },
+        clearFragmentNodeCode: function () {
+            return this.clearNodeCode('fragment');
+        },
+        addVertexFinalCode: function (code) {
+            this.addFinalCode(code, 'vertex');
+        },
+        addFragmentFinalCode: function (code) {
+            this.addFinalCode(code, 'fragment');
+        },
+        addFinalCode: function (code, shader) {
+            this.finalCode[shader || this.shader] += code + '\n';
+        },
+        addVertexParsCode: function (code) {
+            this.addParsCode(code, 'vertex');
+        },
+        addFragmentParsCode: function (code) {
+            this.addParsCode(code, 'fragment');
+        },
+        addParsCode: function (code, shader) {
+            this.parsCode[shader || this.shader] += code + '\n';
+        },
+        addVaryCode: function (code) {
+            this.addVertexParsCode(code);
+            this.addFragmentParsCode(code);
+        },
+        isCache: function (name) {
+            return this.caches.indexOf(name) !== -1;
+        },
+        isSlot: function (name) {
+            return this.slots.indexOf(name) !== -1;
+        },
+        define: function (name, value) {
+            this.defines[name] = value === undefined ? 1 : value;
+        },
+        require: function (name) {
+            this.requires[name] = true;
+        },
+        isDefined: function (name) {
+            return this.defines[name] !== undefined;
+        },
+        getVar: function (uuid, type, ns, shader = 'varying', prefix = 'V', label = '') {
+            var vars = this.getVars(shader), data = vars[uuid];
+            if (!data) {
+                var index = vars.length, name = ns ? ns : 'node' + prefix + index + (label ? '_' + label : '');
+                data = {
+                    name: name,
+                    type: type
+                };
+                vars.push(data);
+                vars[uuid] = data;
+            }
+            return data;
+        },
+        getTempVar: function (uuid, type, ns, label) {
+            return this.getVar(uuid, type, ns, this.shader, 'T', label);
+        },
+        getAttribute: function (name, type) {
+            if (!this.attributes[name]) {
+                var varying = this.getVar(name, type);
+                this.addVertexParsCode('attribute ' + type + ' ' + name + ';');
+                this.addVertexFinalCode(varying.name + ' = ' + name + ';');
+                this.attributes[name] = {
+                    varying: varying,
+                    name: name,
+                    type: type
+                };
+            }
+            return this.attributes[name];
+        },
+        getCode: function (shader) {
+            return [
+                this.prefixCode,
+                this.parsCode[shader],
+                this.getVarListCode(this.getVars('varying'), 'varying'),
+                this.getVarListCode(this.inputs.uniforms[shader], 'uniform'),
+                this.getIncludesCode('consts', shader),
+                this.getIncludesCode('structs', shader),
+                this.getIncludesCode('functions', shader),
+                'void main() {',
+                this.getVarListCode(this.getVars(shader)),
+                this.code[shader],
+                this.resultCode[shader],
+                this.finalCode[shader],
+                '}'
+            ].join('\n');
+        },
+        getVarListCode: function (vars, prefix) {
+            prefix = prefix || '';
+            var code = '';
+            for (var i = 0, l = vars.length; i < l; ++i) {
+                var nVar = vars[i], type = nVar.type, name = nVar.name;
+                var formatType = this.getFormatByType(type);
+                if (formatType === undefined) {
+                    throw new Error('Node pars ' + formatType + ' not found.');
+                }
+                code += prefix + ' ' + formatType + ' ' + name + ';\n';
+            }
+            return code;
+        },
+        getVars: function (shader) {
+            return this.inputs.vars[shader || this.shader];
+        },
+        getNodeData: function (node) {
+            var uuid = node.isNode ? node.uuid : node;
+            return this.nodeData[uuid] = this.nodeData[uuid] || {};
+        },
+        createUniform: function (shader, type, node, ns, needsUpdate, label) {
+            var uniforms = this.inputs.uniforms, index = uniforms.list.length;
+            var uniform = new NodeUniform({
+                type: type,
+                name: ns ? ns : 'nodeU' + index + (label ? '_' + label : ''),
+                node: node,
+                needsUpdate: needsUpdate
+            });
+            uniforms.list.push(uniform);
+            uniforms[shader].push(uniform);
+            uniforms[shader][uniform.name] = uniform;
+            this.uniforms[uniform.name] = uniform;
+            return uniform;
+        },
+        createVertexUniform: function (type, node, ns, needsUpdate, label) {
+            return this.createUniform('vertex', type, node, ns, needsUpdate, label);
+        },
+        createFragmentUniform: function (type, node, ns, needsUpdate, label) {
+            return this.createUniform('fragment', type, node, ns, needsUpdate, label);
+        },
+        include: function (node, parent, source) {
+            var includesStruct;
+            node = typeof node === 'string' ? NodeLib.get(node) : node;
+            if (this.context.include === false) {
+                return node.name;
+            }
+            if (node instanceof FunctionNode) {
+                includesStruct = this.includes.functions;
+            } else if (node instanceof ConstNode) {
+                includesStruct = this.includes.consts;
+            } else if (node instanceof StructNode) {
+                includesStruct = this.includes.structs;
+            }
+            var includes = includesStruct[this.shader] = includesStruct[this.shader] || [];
+            if (node) {
+                var included = includes[node.name];
+                if (!included) {
+                    included = includes[node.name] = {
+                        node: node,
+                        deps: []
+                    };
+                    includes.push(included);
+                    included.src = node.build(this, 'source');
+                }
+                if (node instanceof FunctionNode && parent && includes[parent.name] && includes[parent.name].deps.indexOf(node) == -1) {
+                    includes[parent.name].deps.push(node);
+                    if (node.includes && node.includes.length) {
+                        var i = 0;
+                        do {
+                            this.include(node.includes[i++], parent);
+                        } while (i < node.includes.length);
+                    }
+                }
+                if (source) {
+                    included.src = source;
+                }
+                return node.name;
+            } else {
+                throw new Error('Include not found.');
+            }
+        },
+        colorToVectorProperties: function (color) {
+            return color.replace('r', 'x').replace('g', 'y').replace('b', 'z').replace('a', 'w');
+        },
+        colorToVector: function (color) {
+            return color.replace(/c/g, 'v3');
+        },
+        getIncludes: function (type, shader) {
+            return this.includes[type][shader || this.shader];
+        },
+        getIncludesCode: function () {
+            function sortByPosition(a, b) {
+                return a.deps.length - b.deps.length;
+            }
+            return function getIncludesCode(type, shader) {
+                var includes = this.getIncludes(type, shader);
+                if (!includes)
+                    return '';
+                var code = '', includes = includes.sort(sortByPosition);
+                for (var i = 0; i < includes.length; i++) {
+                    if (includes[i].src)
+                        code += includes[i].src + '\n';
+                }
+                return code;
+            };
+        }(),
+        getConstructorFromLength: function (len) {
+            return constructors[len - 1];
+        },
+        isTypeMatrix: function (format) {
+            return /^m/.test(format);
+        },
+        getTypeLength: function (type) {
+            if (type === 'f')
+                return 1;
+            return parseInt(this.colorToVector(type).substr(1));
+        },
+        getTypeFromLength: function (len) {
+            if (len === 1)
+                return 'f';
+            return 'v' + len;
+        },
+        findNode: function () {
+            for (var i = 0; i < arguments.length; i++) {
+                var nodeCandidate = arguments[i];
+                if (nodeCandidate !== undefined && nodeCandidate.isNode) {
+                    return nodeCandidate;
+                }
+            }
+        },
+        resolve: function () {
+            for (var i = 0; i < arguments.length; i++) {
+                var nodeCandidate = arguments[i];
+                if (nodeCandidate !== undefined) {
+                    if (nodeCandidate.isNode) {
+                        return nodeCandidate;
+                    } else if (nodeCandidate.isTexture) {
+                        switch (nodeCandidate.mapping) {
+                        case THREE.CubeReflectionMapping:
+                        case THREE.CubeRefractionMapping:
+                            return new CubeTextureNode(nodeCandidate);
+                            break;
+                        case THREE.CubeUVReflectionMapping:
+                        case THREE.CubeUVRefractionMapping:
+                            return new TextureCubeNode(new TextureNode(nodeCandidate));
+                            break;
+                        default:
+                            return new TextureNode(nodeCandidate);
+                        }
+                    } else if (nodeCandidate.isVector2) {
+                        return new Vector2Node(nodeCandidate);
+                    } else if (nodeCandidate.isVector3) {
+                        return new Vector3Node(nodeCandidate);
+                    } else if (nodeCandidate.isVector4) {
+                        return new Vector4Node(nodeCandidate);
+                    }
+                }
+            }
+        },
+        format: function (code, from, to) {
+            var typeToType = this.colorToVector(to + ' <- ' + from);
+            switch (typeToType) {
+            case 'f <- v2':
+                return code + '.x';
+            case 'f <- v3':
+                return code + '.x';
+            case 'f <- v4':
+                return code + '.x';
+            case 'f <- i':
+            case 'f <- b':
+                return 'float( ' + code + ' )';
+            case 'v2 <- f':
+                return 'vec2( ' + code + ' )';
+            case 'v2 <- v3':
+                return code + '.xy';
+            case 'v2 <- v4':
+                return code + '.xy';
+            case 'v2 <- i':
+            case 'v2 <- b':
+                return 'vec2( float( ' + code + ' ) )';
+            case 'v3 <- f':
+                return 'vec3( ' + code + ' )';
+            case 'v3 <- v2':
+                return 'vec3( ' + code + ', 0.0 )';
+            case 'v3 <- v4':
+                return code + '.xyz';
+            case 'v3 <- i':
+            case 'v3 <- b':
+                return 'vec2( float( ' + code + ' ) )';
+            case 'v4 <- f':
+                return 'vec4( ' + code + ' )';
+            case 'v4 <- v2':
+                return 'vec4( ' + code + ', 0.0, 1.0 )';
+            case 'v4 <- v3':
+                return 'vec4( ' + code + ', 1.0 )';
+            case 'v4 <- i':
+            case 'v4 <- b':
+                return 'vec4( float( ' + code + ' ) )';
+            case 'i <- f':
+            case 'i <- b':
+                return 'int( ' + code + ' )';
+            case 'i <- v2':
+                return 'int( ' + code + '.x )';
+            case 'i <- v3':
+                return 'int( ' + code + '.x )';
+            case 'i <- v4':
+                return 'int( ' + code + '.x )';
+            case 'b <- f':
+                return '( ' + code + ' != 0.0 )';
+            case 'b <- v2':
+                return '( ' + code + ' != vec2( 0.0 ) )';
+            case 'b <- v3':
+                return '( ' + code + ' != vec3( 0.0 ) )';
+            case 'b <- v4':
+                return '( ' + code + ' != vec4( 0.0 ) )';
+            case 'b <- i':
+                return '( ' + code + ' != 0 )';
+            }
+            return code;
+        },
+        getTypeByFormat: function (format) {
+            return convertFormatToType[format] || format;
+        },
+        getFormatByType: function (type) {
+            return convertTypeToFormat[type] || type;
+        },
+        getUuid: function (uuid, useCache) {
+            useCache = useCache !== undefined ? useCache : true;
+            if (useCache && this.cache)
+                uuid = this.cache + '-' + uuid;
+            return uuid;
+        },
+        getElementByIndex: function (index) {
+            return elements[index];
+        },
+        getIndexByElement: function (elm) {
+            return elements.indexOf(elm);
+        },
+        isShader: function (shader) {
+            return this.shader === shader;
+        },
+        setShader: function (shader) {
+            this.shader = shader;
+            return this;
+        },
+        mergeDefines: function (defines) {
+            for (var name in defines) {
+                this.defines[name] = defines[name];
+            }
+            return this.defines;
+        },
+        mergeUniform: function (uniforms) {
+            for (var name in uniforms) {
+                this.uniforms[name] = uniforms[name];
+            }
+            return this.uniforms;
+        },
+        getTextureEncodingFromMap: function (map) {
+            var encoding;
+            if (!map) {
+                encoding = THREE.LinearEncoding;
+            } else if (map.isTexture) {
+                encoding = map.encoding;
+            } else if (map.isWebGLRenderTarget) {
+                console.warn("THREE.WebGLPrograms.getTextureEncodingFromMap: don't use render targets as textures. Use their .texture property instead.");
+                encoding = map.texture.encoding;
+            }
+            if (encoding === THREE.LinearEncoding && this.context.gamma) {
+                encoding = THREE.GammaEncoding;
+            }
+            return encoding;
+        }
+    };
+    return NodeBuilder;
+});
+define('skylark-threejs-ex/nodes/inputs/BoolNode',[
+    '../core/InputNode'
+], function (InputNode) {
+    'use strict';
+    function BoolNode(value) {
+        InputNode.call(this, 'b');
+        this.value = Boolean(value);
+    }
+    BoolNode.prototype = Object.create(InputNode.prototype);
+    BoolNode.prototype.constructor = BoolNode;
+    BoolNode.prototype.nodeType = 'Bool';
+    BoolNode.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format(this.value, type, output);
+    };
+    BoolNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        return this;
+    };
+    BoolNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return BoolNode;
+});
+define('skylark-threejs-ex/nodes/inputs/IntNode',[
+    '../core/InputNode'
+], function (InputNode) {
+    'use strict';
+    function IntNode(value) {
+        InputNode.call(this, 'i');
+        this.value = Math.floor(value || 0);
+    }
+    IntNode.prototype = Object.create(InputNode.prototype);
+    IntNode.prototype.constructor = IntNode;
+    IntNode.prototype.nodeType = 'Int';
+    IntNode.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format(this.value, type, output);
+    };
+    IntNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        return this;
+    };
+    IntNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return IntNode;
+});
+define('skylark-threejs-ex/nodes/inputs/ColorNode',[
+    "skylark-threejs",
+    '../core/InputNode',
+    '../core/NodeUtils'
+], function (THREE, InputNode, NodeUtils) {
+    'use strict';
+    function ColorNode(color, g, b) {
+        InputNode.call(this, 'c');
+        this.value = color instanceof THREE.Color ? color : new THREE.Color(color || 0, g, b);
+    }
+    ColorNode.prototype = Object.create(InputNode.prototype);
+    ColorNode.prototype.constructor = ColorNode;
+    ColorNode.prototype.nodeType = 'Color';
+    NodeUtils.addShortcuts(ColorNode.prototype, 'value', [
+        'r',
+        'g',
+        'b'
+    ]);
+    ColorNode.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format('vec3( ' + this.r + ', ' + this.g + ', ' + this.b + ' )', type, output);
+    };
+    ColorNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value.copy(source);
+        return this;
+    };
+    ColorNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.r = this.r;
+            data.g = this.g;
+            data.b = this.b;
+            if (this.readonly === true)
+                data.readonly = true;
+        }
+        return data;
+    };
+    return ColorNode;
+});
+define('skylark-threejs-ex/nodes/inputs/Matrix3Node',[
+    "skylark-threejs",
+    '../core/InputNode'
+], function (THREE, InputNode) {
+    'use strict';
+    function Matrix3Node(matrix) {
+        InputNode.call(this, 'm3');
+        this.value = matrix || new THREE.Matrix3();
+    }
+    Matrix3Node.prototype = Object.create(InputNode.prototype);
+    Matrix3Node.prototype.constructor = Matrix3Node;
+    Matrix3Node.prototype.nodeType = 'Matrix3';
+    Object.defineProperties(Matrix3Node.prototype, {
+        elements: {
+            set: function (val) {
+                this.value.elements = val;
+            },
+            get: function () {
+                return this.value.elements;
+            }
+        }
+    });
+    Matrix3Node.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format('mat3( ' + this.value.elements.join(', ') + ' )', type, output);
+    };
+    Matrix3Node.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.value.fromArray(source.elements);
+        return this;
+    };
+    Matrix3Node.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.elements = this.value.elements.concat();
+        }
+        return data;
+    };
+    return Matrix3Node;
+});
+define('skylark-threejs-ex/nodes/inputs/Matrix4Node',[
+    "skylark-threejs",
+    '../core/InputNode'
+], function (THREE, InputNode) {
+    'use strict';
+    function Matrix4Node(matrix) {
+        InputNode.call(this, 'm4');
+        this.value = matrix || new THREE.Matrix4();
+    }
+    Matrix4Node.prototype = Object.create(InputNode.prototype);
+    Matrix4Node.prototype.constructor = Matrix4Node;
+    Matrix4Node.prototype.nodeType = 'Matrix4';
+    Object.defineProperties(Matrix4Node.prototype, {
+        elements: {
+            set: function (val) {
+                this.value.elements = val;
+            },
+            get: function () {
+                return this.value.elements;
+            }
+        }
+    });
+    Matrix4Node.prototype.generateReadonly = function (builder, output, uuid, type) {
+        return builder.format('mat4( ' + this.value.elements.join(', ') + ' )', type, output);
+    };
+    Matrix4Node.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.scope.value.fromArray(source.elements);
+        return this;
+    };
+    Matrix4Node.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.elements = this.value.elements.concat();
+        }
+        return data;
+    };
+    return Matrix4Node;
+});
+define('skylark-threejs-ex/nodes/inputs/ScreenNode',[
+    '../core/InputNode',
+    './TextureNode'
+], function (
+    InputNode, 
+    TextureNode
+) {
+    'use strict';
+    function ScreenNode(uv) {
+        TextureNode.call(this, undefined, uv);
+    }
+    ScreenNode.prototype = Object.create(TextureNode.prototype);
+    ScreenNode.prototype.constructor = ScreenNode;
+    ScreenNode.prototype.nodeType = 'Screen';
+    ScreenNode.prototype.getUnique = function () {
+        return true;
+    };
+    ScreenNode.prototype.getTexture = function (builder, output) {
+        return InputNode.prototype.generate.call(this, builder, output, this.getUuid(), 't', 'renderTexture');
+    };
+    return ScreenNode;
+});
+define('skylark-threejs-ex/nodes/inputs/ReflectorNode',[
+    '../core/TempNode',
+    '../core/InputNode',
+    '../accessors/PositionNode',
+    '../math/OperatorNode',
+    './TextureNode',
+    './Matrix4Node'
+], function (
+    TempNode, 
+    InputNode, 
+    PositionNode, 
+    OperatorNode, 
+    TextureNode, 
+    Matrix4Node
+) {
+    'use strict';
+    function ReflectorNode(mirror) {
+        TempNode.call(this, 'v4');
+        if (mirror)
+            this.setMirror(mirror);
+    }
+    ReflectorNode.prototype = Object.create(TempNode.prototype);
+    ReflectorNode.prototype.constructor = ReflectorNode;
+    ReflectorNode.prototype.nodeType = 'Reflector';
+    ReflectorNode.prototype.setMirror = function (mirror) {
+        this.mirror = mirror;
+        this.textureMatrix = new Matrix4Node(this.mirror.material.uniforms.textureMatrix.value);
+        this.localPosition = new PositionNode(PositionNode.LOCAL);
+        this.uv = new OperatorNode(this.textureMatrix, this.localPosition, OperatorNode.MUL);
+        this.uvResult = new OperatorNode(null, this.uv, OperatorNode.ADD);
+        this.texture = new TextureNode(this.mirror.material.uniforms.tDiffuse.value, this.uv, null, true);
+    };
+    ReflectorNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            this.uvResult.a = this.offset;
+            this.texture.uv = this.offset ? this.uvResult : this.uv;
+            if (output === 'sampler2D') {
+                return this.texture.build(builder, output);
+            }
+            return builder.format(this.texture.build(builder, this.type), this.type, output);
+        } else {
+            console.warn('THREE.ReflectorNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec4( 0.0 )', this.type, output);
+        }
+    };
+    ReflectorNode.prototype.copy = function (source) {
+        InputNode.prototype.copy.call(this, source);
+        this.scope.mirror = source.mirror;
+        return this;
+    };
+    ReflectorNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.mirror = this.mirror.uuid;
+            if (this.offset)
+                data.offset = this.offset.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return ReflectorNode;
+});
+define('skylark-threejs-ex/nodes/inputs/PropertyNode',['../core/InputNode'], function (InputNode) {
+    'use strict';
+    function PropertyNode(object, property, type) {
+        InputNode.call(this, type);
+        this.object = object;
+        this.property = property;
+    }
+    PropertyNode.prototype = Object.create(InputNode.prototype);
+    PropertyNode.prototype.constructor = PropertyNode;
+    PropertyNode.prototype.nodeType = 'Property';
+    Object.defineProperties(PropertyNode.prototype, {
+        value: {
+            get: function () {
+                return this.object[this.property];
+            },
+            set: function (val) {
+                this.object[this.property] = val;
+            }
+        }
+    });
+    PropertyNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value;
+            data.property = this.property;
+        }
+        return data;
+    };
+    return PropertyNode;
+});
+define('skylark-threejs-ex/nodes/materials/nodes/RawNode',[
+    '../../core/Node'
+], function (
+    Node
+) {
+    'use strict';
+    function RawNode(value) {
+        Node.call(this, 'v4');
+        this.value = value;
+    }
+    RawNode.prototype = Object.create(Node.prototype);
+    RawNode.prototype.constructor = RawNode;
+    RawNode.prototype.nodeType = 'Raw';
+    RawNode.prototype.generate = function (builder) {
+        var data = this.value.analyzeAndFlow(builder, this.type), code = data.code + '\n';
+        if (builder.isShader('vertex')) {
+            code += 'gl_Position = ' + data.result + ';';
+        } else {
+            code += 'gl_FragColor = ' + data.result + ';';
+        }
+        return code;
+    };
+    RawNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        this.value = source.value;
+        return this;
+    };
+    RawNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return RawNode;
+});
+define('skylark-threejs-ex/nodes/materials/NodeMaterial',[
+    "skylark-threejs",
+    '../core/NodeBuilder',
+    '../inputs/ColorNode',
+    '../accessors/PositionNode',
+    './nodes/RawNode'
+], function (
+    THREE, 
+    NodeBuilder, 
+    ColorNode, 
+    PositionNode, 
+    RawNode
+) {
+    'use strict';
+    function NodeMaterial(vertex, fragment) {
+        THREE.ShaderMaterial.call(this);
+        var self = this;
+        this.vertex = vertex || new RawNode(new PositionNode(PositionNode.PROJECTION));
+        this.fragment = fragment || new RawNode(new ColorNode(16711680));
+        this.updaters = [];
+        this.onBeforeCompile = function (shader, renderer) {
+            var materialProperties = renderer.properties.get(this);
+            if (this.version !== materialProperties.__version) {
+                this.build({ renderer: renderer });
+                shader.uniforms = this.uniforms;
+                shader.vertexShader = this.vertexShader;
+                shader.fragmentShader = this.fragmentShader;
+            }
+        };
+        this.onBeforeCompile.toString = function () {
+            return self.needsCompile;
+        };
+    }
+    NodeMaterial.prototype = Object.create(THREE.ShaderMaterial.prototype);
+    NodeMaterial.prototype.constructor = NodeMaterial;
+    NodeMaterial.prototype.type = 'NodeMaterial';
+    NodeMaterial.prototype.isNodeMaterial = true;
+    Object.defineProperties(NodeMaterial.prototype, {
+        properties: {
+            get: function () {
+                return this.fragment.properties;
+            }
+        },
+        needsUpdate: {
+            set: function (value) {
+                if (value === true)
+                    this.version++;
+                this.needsCompile = value;
+            },
+            get: function () {
+                return this.needsCompile;
+            }
+        }
+    });
+    NodeMaterial.prototype.updateFrame = function (frame) {
+        for (var i = 0; i < this.updaters.length; ++i) {
+            frame.updateNode(this.updaters[i]);
+        }
+    };
+    NodeMaterial.prototype.build = function (params) {
+        params = params || {};
+        var builder = params.builder || new NodeBuilder();
+        builder.setMaterial(this, params.renderer);
+        builder.build(this.vertex, this.fragment);
+        this.vertexShader = builder.getCode('vertex');
+        this.fragmentShader = builder.getCode('fragment');
+        this.defines = builder.defines;
+        this.uniforms = builder.uniforms;
+        this.extensions = builder.extensions;
+        this.updaters = builder.updaters;
+        this.fog = builder.requires.fog;
+        this.lights = builder.requires.lights;
+        this.transparent = builder.requires.transparent || this.blending > THREE.NormalBlending;
+        return this;
+    };
+    NodeMaterial.prototype.copy = function (source) {
+        var uuid = this.uuid;
+        for (var name in source) {
+            this[name] = source[name];
+        }
+        this.uuid = uuid;
+        if (source.userData !== undefined) {
+            this.userData = JSON.parse(JSON.stringify(source.userData));
+        }
+        return this;
+    };
+    NodeMaterial.prototype.toJSON = function (meta) {
+        var isRootObject = meta === undefined || typeof meta === 'string';
+        if (isRootObject) {
+            meta = { nodes: {} };
+        }
+        if (meta && !meta.materials)
+            meta.materials = {};
+        if (!meta.materials[this.uuid]) {
+            var data = {};
+            data.uuid = this.uuid;
+            data.type = this.type;
+            meta.materials[data.uuid] = data;
+            if (this.name !== '')
+                data.name = this.name;
+            if (this.size !== undefined)
+                data.size = this.size;
+            if (this.sizeAttenuation !== undefined)
+                data.sizeAttenuation = this.sizeAttenuation;
+            if (this.blending !== THREE.NormalBlending)
+                data.blending = this.blending;
+            if (this.flatShading === true)
+                data.flatShading = this.flatShading;
+            if (this.side !== THREE.FrontSide)
+                data.side = this.side;
+            if (this.vertexColors !== THREE.NoColors)
+                data.vertexColors = this.vertexColors;
+            if (this.depthFunc !== THREE.LessEqualDepth)
+                data.depthFunc = this.depthFunc;
+            if (this.depthTest === false)
+                data.depthTest = this.depthTest;
+            if (this.depthWrite === false)
+                data.depthWrite = this.depthWrite;
+            if (this.linewidth !== 1)
+                data.linewidth = this.linewidth;
+            if (this.dashSize !== undefined)
+                data.dashSize = this.dashSize;
+            if (this.gapSize !== undefined)
+                data.gapSize = this.gapSize;
+            if (this.scale !== undefined)
+                data.scale = this.scale;
+            if (this.dithering === true)
+                data.dithering = true;
+            if (this.wireframe === true)
+                data.wireframe = this.wireframe;
+            if (this.wireframeLinewidth > 1)
+                data.wireframeLinewidth = this.wireframeLinewidth;
+            if (this.wireframeLinecap !== 'round')
+                data.wireframeLinecap = this.wireframeLinecap;
+            if (this.wireframeLinejoin !== 'round')
+                data.wireframeLinejoin = this.wireframeLinejoin;
+            if (this.alphaTest > 0)
+                data.alphaTest = this.alphaTest;
+            if (this.premultipliedAlpha === true)
+                data.premultipliedAlpha = this.premultipliedAlpha;
+            if (this.morphTargets === true)
+                data.morphTargets = true;
+            if (this.skinning === true)
+                data.skinning = true;
+            if (this.visible === false)
+                data.visible = false;
+            if (JSON.stringify(this.userData) !== '{}')
+                data.userData = this.userData;
+            data.fog = this.fog;
+            data.lights = this.lights;
+            data.vertex = this.vertex.toJSON(meta).uuid;
+            data.fragment = this.fragment.toJSON(meta).uuid;
+        }
+        meta.material = this.uuid;
+        return meta;
+    };
+    return NodeMaterial;
+});
+define('skylark-threejs-ex/nodes/inputs/RTTNode',[
+    "skylark-threejs",
+    '../core/NodeBuilder',
+    '../materials/NodeMaterial',
+    './TextureNode'
+], function (
+    THREE, 
+    NodeBuilder, 
+    NodeMaterial, 
+    TextureNode
+) {
+    'use strict';
+    function RTTNode(width, height, input, options) {
+        options = options || {};
+        this.input = input;
+        this.clear = options.clear !== undefined ? options.clear : true;
+        this.renderTarget = new THREE.WebGLRenderTarget(width, height, options);
+        this.material = new NodeMaterial();
+        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.scene = new THREE.Scene();
+        this.quad = new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), this.material);
+        this.quad.frustumCulled = false;
+        this.scene.add(this.quad);
+        this.render = true;
+        TextureNode.call(this, this.renderTarget.texture);
+    }
+    RTTNode.prototype = Object.create(TextureNode.prototype);
+    RTTNode.prototype.constructor = RTTNode;
+    RTTNode.prototype.nodeType = 'RTT';
+    RTTNode.prototype.build = function (builder, output, uuid) {
+        var rttBuilder = new NodeBuilder();
+        rttBuilder.nodes = builder.nodes;
+        rttBuilder.updaters = builder.updaters;
+        this.material.fragment.value = this.input;
+        this.material.build({ builder: rttBuilder });
+        return TextureNode.prototype.build.call(this, builder, output, uuid);
+    };
+    RTTNode.prototype.updateFramesaveTo = function (frame) {
+        this.saveTo.render = false;
+        if (this.saveTo !== this.saveToCurrent) {
+            if (this.saveToMaterial)
+                this.saveToMaterial.dispose();
+            var material = new NodeMaterial();
+            material.fragment.value = this;
+            material.build();
+            var scene = new THREE.Scene();
+            var quad = new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), material);
+            quad.frustumCulled = false;
+            scene.add(quad);
+            this.saveToScene = scene;
+            this.saveToMaterial = material;
+        }
+        this.saveToCurrent = this.saveTo;
+        frame.renderer.setRenderTarget(this.saveTo.renderTarget);
+        if (this.saveTo.clear)
+            frame.renderer.clear();
+        frame.renderer.render(this.saveToScene, this.camera);
+    };
+    RTTNode.prototype.updateFrame = function (frame) {
+        if (frame.renderer) {
+            if (this.saveTo && this.saveTo.render === false) {
+                this.updateFramesaveTo(frame);
+            }
+            if (this.render) {
+                if (this.material.uniforms.renderTexture) {
+                    this.material.uniforms.renderTexture.value = frame.renderTexture;
+                }
+                frame.renderer.setRenderTarget(this.renderTarget);
+                if (this.clear)
+                    frame.renderer.clear();
+                frame.renderer.render(this.scene, this.camera);
+            }
+            if (this.saveTo && this.saveTo.render === true) {
+                this.updateFramesaveTo(frame);
+            }
+        } else {
+            console.warn('RTTNode need a renderer in NodeFrame');
+        }
+    };
+    RTTNode.prototype.copy = function (source) {
+        TextureNode.prototype.copy.call(this, source);
+        this.saveTo = source.saveTo;
+        return this;
+    };
+    RTTNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = TextureNode.prototype.toJSON.call(this, meta);
+            if (this.saveTo)
+                data.saveTo = this.saveTo.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return RTTNode;
+});
+define('skylark-threejs-ex/nodes/accessors/ColorsNode',[
+    '../core/TempNode'
+], function (TempNode) {
+    'use strict';
+    var vertexDict = [
+            'color',
+            'color2'
+        ], fragmentDict = [
+            'vColor',
+            'vColor2'
+        ];
+    function ColorsNode(index) {
+        TempNode.call(this, 'v4', { shared: false });
+        this.index = index || 0;
+    }
+    ColorsNode.prototype = Object.create(TempNode.prototype);
+    ColorsNode.prototype.constructor = ColorsNode;
+    ColorsNode.prototype.nodeType = 'Colors';
+    ColorsNode.prototype.generate = function (builder, output) {
+        builder.requires.color[this.index] = true;
+        var result = builder.isShader('vertex') ? vertexDict[this.index] : fragmentDict[this.index];
+        return builder.format(result, this.getType(builder), output);
+    };
+    ColorsNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.index = source.index;
+        return this;
+    };
+    ColorsNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.index = this.index;
+        }
+        return data;
+    };
+    return ColorsNode;
+});
+define('skylark-threejs-ex/nodes/accessors/CameraNode',[
+    '../core/TempNode',
+    '../core/FunctionNode',
+    '../inputs/FloatNode',
+    '../accessors/PositionNode'
+], function (TempNode, FunctionNode, FloatNode, PositionNode) {
+    'use strict';
+    function CameraNode(scope, camera) {
+        TempNode.call(this, 'v3');
+        this.setScope(scope || CameraNode.POSITION);
+        this.setCamera(camera);
+    }
+    CameraNode.Nodes = function () {
+        var depthColor = new FunctionNode([
+            'float depthColor( float mNear, float mFar ) {',
+            '\t#ifdef USE_LOGDEPTHBUF_EXT',
+            '\t\tfloat depth = gl_FragDepthEXT / gl_FragCoord.w;',
+            '\t#else',
+            '\t\tfloat depth = gl_FragCoord.z / gl_FragCoord.w;',
+            '\t#endif',
+            '\treturn 1.0 - smoothstep( mNear, mFar, depth );',
+            '}'
+        ].join('\n'));
+        return { depthColor: depthColor };
+    }();
+    CameraNode.POSITION = 'position';
+    CameraNode.DEPTH = 'depth';
+    CameraNode.TO_VERTEX = 'toVertex';
+    CameraNode.prototype = Object.create(TempNode.prototype);
+    CameraNode.prototype.constructor = CameraNode;
+    CameraNode.prototype.nodeType = 'Camera';
+    CameraNode.prototype.setCamera = function (camera) {
+        this.camera = camera;
+        this.updateFrame = camera !== undefined ? this.onUpdateFrame : undefined;
+    };
+    CameraNode.prototype.setScope = function (scope) {
+        switch (this.scope) {
+        case CameraNode.DEPTH:
+            delete this.near;
+            delete this.far;
+            break;
+        }
+        this.scope = scope;
+        switch (scope) {
+        case CameraNode.DEPTH:
+            var camera = this.camera;
+            this.near = new FloatNode(camera ? camera.near : 1);
+            this.far = new FloatNode(camera ? camera.far : 1200);
+            break;
+        }
+    };
+    CameraNode.prototype.getType = function () {
+        switch (this.scope) {
+        case CameraNode.DEPTH:
+            return 'f';
+        }
+        return this.type;
+    };
+    CameraNode.prototype.getUnique = function () {
+        switch (this.scope) {
+        case CameraNode.DEPTH:
+        case CameraNode.TO_VERTEX:
+            return true;
+        }
+        return false;
+    };
+    CameraNode.prototype.getShared = function () {
+        switch (this.scope) {
+        case CameraNode.POSITION:
+            return false;
+        }
+        return true;
+    };
+    CameraNode.prototype.generate = function (builder, output) {
+        var result;
+        switch (this.scope) {
+        case CameraNode.POSITION:
+            result = 'cameraPosition';
+            break;
+        case CameraNode.DEPTH:
+            var depthColor = builder.include(CameraNode.Nodes.depthColor);
+            result = depthColor + '( ' + this.near.build(builder, 'f') + ', ' + this.far.build(builder, 'f') + ' )';
+            break;
+        case CameraNode.TO_VERTEX:
+            result = 'normalize( ' + new PositionNode(PositionNode.WORLD).build(builder, 'v3') + ' - cameraPosition )';
+            break;
+        }
+        return builder.format(result, this.getType(builder), output);
+    };
+    CameraNode.prototype.onUpdateFrame = function () {
+        switch (this.scope) {
+        case CameraNode.DEPTH:
+            var camera = this.camera;
+            this.near.value = camera.near;
+            this.far.value = camera.far;
+            break;
+        }
+    };
+    CameraNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.setScope(source.scope);
+        if (source.camera) {
+            this.setCamera(source.camera);
+        }
+        switch (source.scope) {
+        case CameraNode.DEPTH:
+            this.near.number = source.near;
+            this.far.number = source.far;
+            break;
+        }
+        return this;
+    };
+    CameraNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.scope = this.scope;
+            if (this.camera)
+                data.camera = this.camera.uuid;
+            switch (this.scope) {
+            case CameraNode.DEPTH:
+                data.near = this.near.value;
+                data.far = this.far.value;
+                break;
+            }
+        }
+        return data;
+    };
+    return CameraNode;
+});
+define('skylark-threejs-ex/nodes/accessors/LightNode',[
+    '../core/TempNode'
+], function (TempNode) {
+    'use strict';
+    function LightNode(scope) {
+        TempNode.call(this, 'v3', { shared: false });
+        this.scope = scope || LightNode.TOTAL;
+    }
+    LightNode.TOTAL = 'total';
+    LightNode.prototype = Object.create(TempNode.prototype);
+    LightNode.prototype.constructor = LightNode;
+    LightNode.prototype.nodeType = 'Light';
+    LightNode.prototype.generate = function (builder, output) {
+        if (builder.isCache('light')) {
+            return builder.format('reflectedLight.directDiffuse', this.type, output);
+        } else {
+            console.warn('THREE.LightNode is only compatible in "light" channel.');
+            return builder.format('vec3( 0.0 )', this.type, output);
+        }
+    };
+    LightNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.scope = source.scope;
+        return this;
+    };
+    LightNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.scope = this.scope;
+        }
+        return data;
+    };
+    return LightNode;
+});
+define('skylark-threejs-ex/nodes/accessors/ResolutionNode',[
+    "skylark-threejs",
+    '../inputs/Vector2Node'
+], function (THREE, Vector2Node) {
+    'use strict';
+    function ResolutionNode() {
+        Vector2Node.call(this);
+        this.size = new THREE.Vector2();
+    }
+    ResolutionNode.prototype = Object.create(Vector2Node.prototype);
+    ResolutionNode.prototype.constructor = ResolutionNode;
+    ResolutionNode.prototype.nodeType = 'Resolution';
+    ResolutionNode.prototype.updateFrame = function (frame) {
+        if (frame.renderer) {
+            frame.renderer.getSize(this.size);
+            var pixelRatio = frame.renderer.getPixelRatio();
+            this.x = this.size.width * pixelRatio;
+            this.y = this.size.height * pixelRatio;
+        } else {
+            console.warn('ResolutionNode need a renderer in NodeFrame');
+        }
+    };
+    ResolutionNode.prototype.copy = function (source) {
+        Vector2Node.prototype.copy.call(this, source);
+        this.renderer = source.renderer;
+        return this;
+    };
+    ResolutionNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.renderer = this.renderer.uuid;
+        }
+        return data;
+    };
+    return ResolutionNode;
+});
+define('skylark-threejs-ex/nodes/accessors/ScreenUVNode',[
+    '../core/TempNode',
+    './ResolutionNode'
+], function (TempNode, ResolutionNode) {
+    'use strict';
+    function ScreenUVNode(resolution) {
+        TempNode.call(this, 'v2');
+        this.resolution = resolution || new ResolutionNode();
+    }
+    ScreenUVNode.prototype = Object.create(TempNode.prototype);
+    ScreenUVNode.prototype.constructor = ScreenUVNode;
+    ScreenUVNode.prototype.nodeType = 'ScreenUV';
+    ScreenUVNode.prototype.generate = function (builder, output) {
+        var result;
+        if (builder.isShader('fragment')) {
+            result = '( gl_FragCoord.xy / ' + this.resolution.build(builder, 'v2') + ')';
+        } else {
+            console.warn('THREE.ScreenUVNode is not compatible with ' + builder.shader + ' shader.');
+            result = 'vec2( 0.0 )';
+        }
+        return builder.format(result, this.getType(builder), output);
+    };
+    ScreenUVNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.resolution = source.resolution;
+        return this;
+    };
+    ScreenUVNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.resolution = this.resolution.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return ScreenUVNode;
+});
+define('skylark-threejs-ex/nodes/math/CondNode',[
+    '../core/TempNode'
+], function (
+    TempNode
+) {
+    'use strict';
+    function CondNode(a, b, op, ifNode, elseNode) {
+        TempNode.call(this);
+        this.a = a;
+        this.b = b;
+        this.op = op;
+        this.ifNode = ifNode;
+        this.elseNode = elseNode;
+    }
+    CondNode.EQUAL = '==';
+    CondNode.NOT_EQUAL = '!=';
+    CondNode.GREATER = '>';
+    CondNode.GREATER_EQUAL = '>=';
+    CondNode.LESS = '<';
+    CondNode.LESS_EQUAL = '<=';
+    CondNode.prototype = Object.create(TempNode.prototype);
+    CondNode.prototype.constructor = CondNode;
+    CondNode.prototype.nodeType = 'Cond';
+    CondNode.prototype.getType = function (builder) {
+        if (this.ifNode) {
+            var ifType = this.ifNode.getType(builder);
+            var elseType = this.elseNode.getType(builder);
+            if (builder.getTypeLength(elseType) > builder.getTypeLength(ifType)) {
+                return elseType;
+            }
+            return ifType;
+        }
+        return 'b';
+    };
+    CondNode.prototype.getCondType = function (builder) {
+        if (builder.getTypeLength(this.b.getType(builder)) > builder.getTypeLength(this.a.getType(builder))) {
+            return this.b.getType(builder);
+        }
+        return this.a.getType(builder);
+    };
+    CondNode.prototype.generate = function (builder, output) {
+        var type = this.getType(builder), condType = this.getCondType(builder), a = this.a.build(builder, condType), b = this.b.build(builder, condType), code;
+        if (this.ifNode) {
+            var ifCode = this.ifNode.build(builder, type), elseCode = this.elseNode.build(builder, type);
+            code = '( ' + [
+                a,
+                this.op,
+                b,
+                '?',
+                ifCode,
+                ':',
+                elseCode
+            ].join(' ') + ' )';
+        } else {
+            code = '( ' + a + ' ' + this.op + ' ' + b + ' )';
+        }
+        return builder.format(code, this.getType(builder), output);
+    };
+    CondNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.a = source.a;
+        this.b = source.b;
+        this.op = source.op;
+        this.ifNode = source.ifNode;
+        this.elseNode = source.elseNode;
+        return this;
+    };
+    CondNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.a = this.a.toJSON(meta).uuid;
+            data.b = this.b.toJSON(meta).uuid;
+            data.op = this.op;
+            if (data.ifNode)
+                data.ifNode = this.ifNode.toJSON(meta).uuid;
+            if (data.elseNode)
+                data.elseNode = this.elseNode.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return CondNode;
+});
+define('skylark-threejs-ex/nodes/procedural/NoiseNode',[
+    '../core/TempNode',
+    '../core/FunctionNode',
+    '../accessors/UVNode'
+], function (
+    TempNode, 
+    FunctionNode, 
+    UVNode
+) {
+    'use strict';
+    function NoiseNode(uv) {
+        TempNode.call(this, 'f');
+        this.uv = uv || new UVNode();
+    }
+    NoiseNode.prototype = Object.create(TempNode.prototype);
+    NoiseNode.prototype.constructor = NoiseNode;
+    NoiseNode.prototype.nodeType = 'Noise';
+    NoiseNode.Nodes = function () {
+        var snoise = new FunctionNode([
+            'float snoise(vec2 co) {',
+            '\treturn fract( sin( dot( co.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );',
+            '}'
+        ].join('\n'));
+        return { snoise: snoise };
+    }();
+    NoiseNode.prototype.generate = function (builder, output) {
+        var snoise = builder.include(NoiseNode.Nodes.snoise);
+        return builder.format(snoise + '( ' + this.uv.build(builder, 'v2') + ' )', this.getType(builder), output);
+    };
+    NoiseNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.uv = source.uv;
+        return this;
+    };
+    NoiseNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.uv = this.uv.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return NoiseNode;
+});
+define('skylark-threejs-ex/nodes/procedural/CheckerNode',[
+    '../core/TempNode',
+    '../core/FunctionNode',
+    '../accessors/UVNode'
+], function (
+    TempNode, 
+    FunctionNode, 
+    UVNode
+) {
+    'use strict';
+    function CheckerNode(uv) {
+        TempNode.call(this, 'f');
+        this.uv = uv || new UVNode();
+    }
+    CheckerNode.prototype = Object.create(TempNode.prototype);
+    CheckerNode.prototype.constructor = CheckerNode;
+    CheckerNode.prototype.nodeType = 'Noise';
+    CheckerNode.Nodes = function () {
+        var checker = new FunctionNode([
+            'float checker( vec2 uv ) {',
+            '\tfloat cx = floor( uv.x );',
+            '\tfloat cy = floor( uv.y ); ',
+            '\tfloat result = mod( cx + cy, 2.0 );',
+            '\treturn sign( result );',
+            '}'
+        ].join('\n'));
+        return { checker: checker };
+    }();
+    CheckerNode.prototype.generate = function (builder, output) {
+        var snoise = builder.include(CheckerNode.Nodes.checker);
+        return builder.format(snoise + '( ' + this.uv.build(builder, 'v2') + ' )', this.getType(builder), output);
+    };
+    CheckerNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.uv = source.uv;
+        return this;
+    };
+    CheckerNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.uv = this.uv.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return CheckerNode;
+});
+define('skylark-threejs-ex/nodes/misc/NormalMapNode',[
+    "skylark-threejs",
+    '../core/TempNode',
+    '../inputs/Vector2Node',
+    '../core/FunctionNode',
+    '../accessors/UVNode',
+    '../accessors/NormalNode',
+    '../accessors/PositionNode'
+], function (
+    THREE, 
+    TempNode, 
+    Vector2Node, 
+    FunctionNode, 
+    UVNode, 
+    NormalNode, 
+    PositionNode
+) {
+    'use strict';
+    function NormalMapNode(value, scale) {
+        TempNode.call(this, 'v3');
+        this.value = value;
+        this.scale = scale || new Vector2Node(1, 1);
+    }
+    NormalMapNode.Nodes = function () {
+        var perturbNormal2Arb = new FunctionNode(`vec3 perturbNormal2Arb( vec3 eye_pos, vec3 surf_norm, vec3 map, vec2 vUv, vec2 normalScale ) {
+
+		// Workaround for Adreno 3XX dFd*( vec3 ) bug. See #9988
+
+		vec3 q0 = vec3( dFdx( eye_pos.x ), dFdx( eye_pos.y ), dFdx( eye_pos.z ) );
+		vec3 q1 = vec3( dFdy( eye_pos.x ), dFdy( eye_pos.y ), dFdy( eye_pos.z ) );
+		vec2 st0 = dFdx( vUv.st );
+		vec2 st1 = dFdy( vUv.st );
+
+		float scale = sign( st1.t * st0.s - st0.t * st1.s ); // we do not care about the magnitude
+
+		vec3 S = normalize( ( q0 * st1.t - q1 * st0.t ) * scale );
+		vec3 T = normalize( ( - q0 * st1.s + q1 * st0.s ) * scale );
+		vec3 N = normalize( surf_norm );
+
+		vec3 mapN = map * 2.0 - 1.0;
+
+		mapN.xy *= normalScale;
+
+		#ifdef DOUBLE_SIDED
+
+			// Workaround for Adreno GPUs gl_FrontFacing bug. See #15850 and #10331
+
+			if ( dot( cross( S, T ), N ) < 0.0 ) mapN.xy *= - 1.0;
+
+		#else
+
+			mapN.xy *= ( float( gl_FrontFacing ) * 2.0 - 1.0 );
+
+		#endif
+
+		mat3 tsn = mat3( S, T, N );
+		return normalize( tsn * mapN );
+
+	}`, null, { derivatives: true });
+        return { perturbNormal2Arb: perturbNormal2Arb };
+    }();
+    NormalMapNode.prototype = Object.create(TempNode.prototype);
+    NormalMapNode.prototype.constructor = NormalMapNode;
+    NormalMapNode.prototype.nodeType = 'NormalMap';
+    NormalMapNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            var perturbNormal2Arb = builder.include(NormalMapNode.Nodes.perturbNormal2Arb);
+            this.normal = this.normal || new NormalNode();
+            this.position = this.position || new PositionNode(PositionNode.VIEW);
+            this.uv = this.uv || new UVNode();
+            var scale = this.scale.build(builder, 'v2');
+            if (builder.material.side === THREE.BackSide) {
+                scale = '-' + scale;
+            }
+            return builder.format(perturbNormal2Arb + '( -' + this.position.build(builder, 'v3') + ', ' + this.normal.build(builder, 'v3') + ', ' + this.value.build(builder, 'v3') + ', ' + this.uv.build(builder, 'v2') + ', ' + scale + ' )', this.getType(builder), output);
+        } else {
+            console.warn('THREE.NormalMapNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec3( 0.0 )', this.getType(builder), output);
+        }
+    };
+    NormalMapNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        this.scale = source.scale;
+        return this;
+    };
+    NormalMapNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+            data.scale = this.scale.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return NormalMapNode;
+});
+define('skylark-threejs-ex/nodes/misc/BumpMapNode',[
+    '../core/TempNode',
+    '../inputs/FloatNode',
+    '../core/FunctionNode',
+    '../accessors/NormalNode',
+    '../accessors/PositionNode'
+], function (
+    TempNode, 
+    FloatNode, 
+    FunctionNode, 
+    NormalNode, 
+    PositionNode
+) {
+    'use strict';
+    function BumpMapNode(value, scale) {
+        TempNode.call(this, 'v3');
+        this.value = value;
+        this.scale = scale || new FloatNode(1);
+        this.toNormalMap = false;
+    }
+    BumpMapNode.Nodes = function () {
+        var dHdxy_fwd = new FunctionNode([
+            'vec2 dHdxy_fwd( sampler2D bumpMap, vec2 vUv, float bumpScale ) {',
+            '\tvec2 dSTdx = dFdx( vUv );',
+            '\tvec2 dSTdy = dFdy( vUv );',
+            '\tfloat Hll = bumpScale * texture2D( bumpMap, vUv ).x;',
+            '\tfloat dBx = bumpScale * texture2D( bumpMap, vUv + dSTdx ).x - Hll;',
+            '\tfloat dBy = bumpScale * texture2D( bumpMap, vUv + dSTdy ).x - Hll;',
+            '\treturn vec2( dBx, dBy );',
+            '}'
+        ].join('\n'), null, { derivatives: true });
+        var perturbNormalArb = new FunctionNode([
+            'vec3 perturbNormalArb( vec3 surf_pos, vec3 surf_norm, vec2 dHdxy ) {',
+            '\tvec3 vSigmaX = vec3( dFdx( surf_pos.x ), dFdx( surf_pos.y ), dFdx( surf_pos.z ) );',
+            '\tvec3 vSigmaY = vec3( dFdy( surf_pos.x ), dFdy( surf_pos.y ), dFdy( surf_pos.z ) );',
+            '\tvec3 vN = surf_norm;',
+            '\tvec3 R1 = cross( vSigmaY, vN );',
+            '\tvec3 R2 = cross( vN, vSigmaX );',
+            '\tfloat fDet = dot( vSigmaX, R1 );',
+            '\tfDet *= ( float( gl_FrontFacing ) * 2.0 - 1.0 );',
+            '\tvec3 vGrad = sign( fDet ) * ( dHdxy.x * R1 + dHdxy.y * R2 );',
+            '\treturn normalize( abs( fDet ) * surf_norm - vGrad );',
+            '}'
+        ].join('\n'), [dHdxy_fwd], { derivatives: true });
+        var bumpToNormal = new FunctionNode([
+            'vec3 bumpToNormal( sampler2D bumpMap, vec2 uv, float scale ) {',
+            '\tvec2 dSTdx = dFdx( uv );',
+            '\tvec2 dSTdy = dFdy( uv );',
+            '\tfloat Hll = texture2D( bumpMap, uv ).x;',
+            '\tfloat dBx = texture2D( bumpMap, uv + dSTdx ).x - Hll;',
+            '\tfloat dBy = texture2D( bumpMap, uv + dSTdy ).x - Hll;',
+            '\treturn vec3( .5 - ( dBx * scale ), .5 - ( dBy * scale ), 1.0 );',
+            '}'
+        ].join('\n'), null, { derivatives: true });
+        return {
+            dHdxy_fwd: dHdxy_fwd,
+            perturbNormalArb: perturbNormalArb,
+            bumpToNormal: bumpToNormal
+        };
+    }();
+    BumpMapNode.prototype = Object.create(TempNode.prototype);
+    BumpMapNode.prototype.constructor = BumpMapNode;
+    BumpMapNode.prototype.nodeType = 'BumpMap';
+    BumpMapNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            if (this.toNormalMap) {
+                var bumpToNormal = builder.include(BumpMapNode.Nodes.bumpToNormal);
+                return builder.format(bumpToNormal + '( ' + this.value.build(builder, 'sampler2D') + ', ' + this.value.uv.build(builder, 'v2') + ', ' + this.scale.build(builder, 'f') + ' )', this.getType(builder), output);
+            } else {
+                var derivativeHeight = builder.include(BumpMapNode.Nodes.dHdxy_fwd), perturbNormalArb = builder.include(BumpMapNode.Nodes.perturbNormalArb);
+                this.normal = this.normal || new NormalNode();
+                this.position = this.position || new PositionNode(PositionNode.VIEW);
+                var derivativeHeightCode = derivativeHeight + '( ' + this.value.build(builder, 'sampler2D') + ', ' + this.value.uv.build(builder, 'v2') + ', ' + this.scale.build(builder, 'f') + ' )';
+                return builder.format(perturbNormalArb + '( -' + this.position.build(builder, 'v3') + ', ' + this.normal.build(builder, 'v3') + ', ' + derivativeHeightCode + ' )', this.getType(builder), output);
+            }
+        } else {
+            console.warn('THREE.BumpMapNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec3( 0.0 )', this.getType(builder), output);
+        }
+    };
+    BumpMapNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        this.scale = source.scale;
+        return this;
+    };
+    BumpMapNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+            data.scale = this.scale.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return BumpMapNode;
+});
+define('skylark-threejs-ex/nodes/utils/BypassNode',[
+    '../core/Node'
+], function (
+    Node
+) {
+    'use strict';
+    function BypassNode(code, value) {
+        Node.call(this);
+        this.code = code;
+        this.value = value;
+    }
+    BypassNode.prototype = Object.create(Node.prototype);
+    BypassNode.prototype.constructor = BypassNode;
+    BypassNode.prototype.nodeType = 'Bypass';
+    BypassNode.prototype.getType = function (builder) {
+        if (this.value) {
+            return this.value.getType(builder);
+        } else if (builder.isShader('fragment')) {
+            return 'f';
+        }
+        return 'void';
+    };
+    BypassNode.prototype.generate = function (builder, output) {
+        var code = this.code.build(builder, output) + ';';
+        builder.addNodeCode(code);
+        if (builder.isShader('vertex')) {
+            if (this.value) {
+                return this.value.build(builder, output);
+            }
+        } else {
+            return this.value ? this.value.build(builder, output) : builder.format('0.0', 'f', output);
+        }
+    };
+    BypassNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        this.code = source.code;
+        this.value = source.value;
+        return this;
+    };
+    BypassNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.code = this.code.toJSON(meta).uuid;
+            if (this.value)
+                data.value = this.value.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return BypassNode;
+});
+define('skylark-threejs-ex/nodes/utils/JoinNode',[
+    '../core/TempNode',
+    '../core/NodeUtils'
+], function (
+    TempNode, 
+    NodeUtils
+) {
+    'use strict';
+    var inputs = NodeUtils.elements;
+    function JoinNode(x, y, z, w) {
+        TempNode.call(this, 'f');
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.w = w;
+    }
+    JoinNode.prototype = Object.create(TempNode.prototype);
+    JoinNode.prototype.constructor = JoinNode;
+    JoinNode.prototype.nodeType = 'Join';
+    JoinNode.prototype.getNumElements = function () {
+        var i = inputs.length;
+        while (i--) {
+            if (this[inputs[i]] !== undefined) {
+                ++i;
+                break;
+            }
+        }
+        return Math.max(i, 2);
+    };
+    JoinNode.prototype.getType = function (builder) {
+        return builder.getTypeFromLength(this.getNumElements());
+    };
+    JoinNode.prototype.generate = function (builder, output) {
+        var type = this.getType(builder), length = this.getNumElements(), outputs = [];
+        for (var i = 0; i < length; i++) {
+            var elm = this[inputs[i]];
+            outputs.push(elm ? elm.build(builder, 'f') : '0.0');
+        }
+        var code = (length > 1 ? builder.getConstructorFromLength(length) : '') + '( ' + outputs.join(', ') + ' )';
+        return builder.format(code, type, output);
+    };
+    JoinNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        for (var prop in source.inputs) {
+            this[prop] = source.inputs[prop];
+        }
+        return this;
+    };
+    JoinNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.inputs = {};
+            var length = this.getNumElements();
+            for (var i = 0; i < length; i++) {
+                var elm = this[inputs[i]];
+                if (elm) {
+                    data.inputs[inputs[i]] = elm.toJSON(meta).uuid;
+                }
+            }
+        }
+        return data;
+    };
+    return JoinNode;
+});
+define('skylark-threejs-ex/nodes/utils/SwitchNode',[
+    '../core/Node'
+], function (
+    Node
+) {
+    'use strict';
+    function SwitchNode(node, components) {
+        Node.call(this);
+        this.node = node;
+        this.components = components || 'x';
+    }
+    SwitchNode.prototype = Object.create(Node.prototype);
+    SwitchNode.prototype.constructor = SwitchNode;
+    SwitchNode.prototype.nodeType = 'Switch';
+    SwitchNode.prototype.getType = function (builder) {
+        return builder.getTypeFromLength(this.components.length);
+    };
+    SwitchNode.prototype.generate = function (builder, output) {
+        var type = this.node.getType(builder), node = this.node.build(builder, type), inputLength = builder.getTypeLength(type) - 1;
+        if (inputLength > 0) {
+            var outputLength = 0, components = builder.colorToVectorProperties(this.components);
+            var i, len = components.length;
+            for (i = 0; i < len; i++) {
+                outputLength = Math.max(outputLength, builder.getIndexByElement(components.charAt(i)));
+            }
+            if (outputLength > inputLength)
+                outputLength = inputLength;
+            node += '.';
+            for (i = 0; i < len; i++) {
+                var idx = builder.getIndexByElement(components.charAt(i));
+                if (idx > outputLength)
+                    idx = outputLength;
+                node += builder.getElementByIndex(idx);
+            }
+            return builder.format(node, this.getType(builder), output);
+        } else {
+            return builder.format(node, type, output);
+        }
+    };
+    SwitchNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        this.node = source.node;
+        this.components = source.components;
+        return this;
+    };
+    SwitchNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.node = this.node.toJSON(meta).uuid;
+            data.components = this.components;
+        }
+        return data;
+    };
+    return SwitchNode;
+});
+define('skylark-threejs-ex/nodes/utils/TimerNode',[
+    '../inputs/FloatNode',
+    '../core/NodeLib'
+], function (
+    FloatNode, 
+    NodeLib
+) {
+    'use strict';
+    function TimerNode(scale, scope, timeScale) {
+        FloatNode.call(this);
+        this.scale = scale !== undefined ? scale : 1;
+        this.scope = scope || TimerNode.GLOBAL;
+        this.timeScale = timeScale !== undefined ? timeScale : scale !== undefined;
+    }
+    TimerNode.GLOBAL = 'global';
+    TimerNode.LOCAL = 'local';
+    TimerNode.DELTA = 'delta';
+    TimerNode.prototype = Object.create(FloatNode.prototype);
+    TimerNode.prototype.constructor = TimerNode;
+    TimerNode.prototype.nodeType = 'Timer';
+    TimerNode.prototype.getReadonly = function () {
+        return false;
+    };
+    TimerNode.prototype.getUnique = function () {
+        return this.timeScale && (this.scope === TimerNode.GLOBAL || this.scope === TimerNode.DELTA);
+    };
+    TimerNode.prototype.updateFrame = function (frame) {
+        var scale = this.timeScale ? this.scale : 1;
+        switch (this.scope) {
+        case TimerNode.LOCAL:
+            this.value += frame.delta * scale;
+            break;
+        case TimerNode.DELTA:
+            this.value = frame.delta * scale;
+            break;
+        default:
+            this.value = frame.time * scale;
+        }
+    };
+    TimerNode.prototype.copy = function (source) {
+        FloatNode.prototype.copy.call(this, source);
+        this.scope = source.scope;
+        this.scale = source.scale;
+        this.timeScale = source.timeScale;
+        return this;
+    };
+    TimerNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.scope = this.scope;
+            data.scale = this.scale;
+            data.timeScale = this.timeScale;
+        }
+        return data;
+    };
+    NodeLib.addKeyword('time', function () {
+        return new TimerNode();
+    });
+    return TimerNode;
+});
+define('skylark-threejs-ex/nodes/utils/VelocityNode',[
+    "skylark-threejs",
+    '../inputs/Vector3Node'
+], function (
+    THREE, 
+    Vector3Node
+) {
+    'use strict';
+    function VelocityNode(target, params) {
+        Vector3Node.call(this);
+        this.params = {};
+        this.velocity = new THREE.Vector3();
+        this.setTarget(target);
+        this.setParams(params);
+    }
+    VelocityNode.prototype = Object.create(Vector3Node.prototype);
+    VelocityNode.prototype.constructor = VelocityNode;
+    VelocityNode.prototype.nodeType = 'Velocity';
+    VelocityNode.prototype.getReadonly = function () {
+        return false;
+    };
+    VelocityNode.prototype.setParams = function (params) {
+        switch (this.params.type) {
+        case 'elastic':
+            delete this.moment;
+            delete this.speed;
+            delete this.springVelocity;
+            delete this.lastVelocity;
+            break;
+        }
+        this.params = params || {};
+        switch (this.params.type) {
+        case 'elastic':
+            this.moment = new THREE.Vector3();
+            this.speed = new THREE.Vector3();
+            this.springVelocity = new THREE.Vector3();
+            this.lastVelocity = new THREE.Vector3();
+            break;
+        }
+    };
+    VelocityNode.prototype.setTarget = function (target) {
+        if (this.target) {
+            delete this.position;
+            delete this.oldPosition;
+        }
+        this.target = target;
+        if (target) {
+            this.position = target.getWorldPosition(this.position || new THREE.Vector3());
+            this.oldPosition = this.position.clone();
+        }
+    };
+    VelocityNode.prototype.updateFrameVelocity = function () {
+        if (this.target) {
+            this.position = this.target.getWorldPosition(this.position || new THREE.Vector3());
+            this.velocity.subVectors(this.position, this.oldPosition);
+            this.oldPosition.copy(this.position);
+        }
+    };
+    VelocityNode.prototype.updateFrame = function (frame) {
+        this.updateFrameVelocity(frame);
+        switch (this.params.type) {
+        case 'elastic':
+            var deltaFps = frame.delta * (this.params.fps || 60);
+            var spring = Math.pow(this.params.spring, deltaFps), damping = Math.pow(this.params.damping, deltaFps);
+            this.velocity.multiplyScalar(Math.exp(-this.params.damping * deltaFps));
+            this.velocity.add(this.springVelocity);
+            this.velocity.add(this.speed.multiplyScalar(damping).multiplyScalar(1 - spring));
+            this.speed.subVectors(this.velocity, this.lastVelocity);
+            this.springVelocity.add(this.speed);
+            this.springVelocity.multiplyScalar(spring);
+            this.moment.add(this.springVelocity);
+            this.moment.multiplyScalar(damping);
+            this.lastVelocity.copy(this.velocity);
+            this.value.copy(this.moment);
+            break;
+        default:
+            this.value.copy(this.velocity);
+        }
+    };
+    VelocityNode.prototype.copy = function (source) {
+        Vector3Node.prototype.copy.call(this, source);
+        if (source.target)
+            this.setTarget(source.target);
+        this.setParams(source.params);
+        return this;
+    };
+    VelocityNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            if (this.target)
+                data.target = this.target.uuid;
+            data.params = JSON.parse(JSON.stringify(this.params));
+        }
+        return data;
+    };
+    return VelocityNode;
+});
+define('skylark-threejs-ex/nodes/utils/UVTransformNode',[
+    '../core/ExpressionNode',
+    '../inputs/Matrix3Node',
+    '../accessors/UVNode'
+], function (
+    ExpressionNode, 
+    Matrix3Node, 
+    UVNode
+) {
+    'use strict';
+    function UVTransformNode(uv, position) {
+        ExpressionNode.call(this, '( uvTransform * vec3( uvNode, 1 ) ).xy', 'vec2');
+        this.uv = uv || new UVNode();
+        this.position = position || new Matrix3Node();
+    }
+    UVTransformNode.prototype = Object.create(ExpressionNode.prototype);
+    UVTransformNode.prototype.constructor = UVTransformNode;
+    UVTransformNode.prototype.nodeType = 'UVTransform';
+    UVTransformNode.prototype.generate = function (builder, output) {
+        this.keywords['uvNode'] = this.uv;
+        this.keywords['uvTransform'] = this.position;
+        return ExpressionNode.prototype.generate.call(this, builder, output);
+    };
+    UVTransformNode.prototype.setUvTransform = function (tx, ty, sx, sy, rotation, cx, cy) {
+        cx = cx !== undefined ? cx : 0.5;
+        cy = cy !== undefined ? cy : 0.5;
+        this.position.value.setUvTransform(tx, ty, sx, sy, rotation, cx, cy);
+    };
+    UVTransformNode.prototype.copy = function (source) {
+        ExpressionNode.prototype.copy.call(this, source);
+        this.uv = source.uv;
+        this.position = source.position;
+        return this;
+    };
+    UVTransformNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.uv = this.uv.toJSON(meta).uuid;
+            data.position = this.position.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return UVTransformNode;
+});
+define('skylark-threejs-ex/nodes/utils/MaxMIPLevelNode',[
+    '../inputs/FloatNode'
+], function (
+    FloatNode
+) {
+    'use strict';
+    function MaxMIPLevelNode(texture) {
+        FloatNode.call(this);
+        this.texture = texture;
+        this.maxMIPLevel = 0;
+    }
+    MaxMIPLevelNode.prototype = Object.create(FloatNode.prototype);
+    MaxMIPLevelNode.prototype.constructor = MaxMIPLevelNode;
+    MaxMIPLevelNode.prototype.nodeType = 'MaxMIPLevel';
+    Object.defineProperties(MaxMIPLevelNode.prototype, {
+        value: {
+            get: function () {
+                if (this.maxMIPLevel === 0) {
+                    var image = this.texture.value.image;
+                    if (Array.isArray(image))
+                        image = image[0];
+                    this.maxMIPLevel = image !== undefined ? Math.log(Math.max(image.width, image.height)) * Math.LOG2E : 0;
+                }
+                return this.maxMIPLevel;
+            },
+            set: function () {
+            }
+        }
+    });
+    MaxMIPLevelNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.texture = this.texture.uuid;
+        }
+        return data;
+    };
+    return MaxMIPLevelNode;
+});
+define('skylark-threejs-ex/nodes/utils/SpecularMIPLevelNode',[
+    '../core/TempNode',
+    '../core/FunctionNode',
+    './MaxMIPLevelNode'
+], function (
+    TempNode, 
+    FunctionNode, 
+    MaxMIPLevelNode
+) {
+    'use strict';
+    function SpecularMIPLevelNode(roughness, texture) {
+        TempNode.call(this, 'f');
+        this.roughness = roughness;
+        this.texture = texture;
+        this.maxMIPLevel = undefined;
+    }
+    SpecularMIPLevelNode.Nodes = function () {
+        var getSpecularMIPLevel = new FunctionNode([
+            'float getSpecularMIPLevel( const in float roughness, const in float maxMIPLevelScalar ) {',
+            '\tfloat sigma = PI * roughness * roughness / ( 1.0 + roughness );',
+            '\tfloat desiredMIPLevel = maxMIPLevelScalar + log2( sigma );',
+            '\treturn clamp( desiredMIPLevel, 0.0, maxMIPLevelScalar );',
+            '}'
+        ].join('\n'));
+        return { getSpecularMIPLevel: getSpecularMIPLevel };
+    }();
+    SpecularMIPLevelNode.prototype = Object.create(TempNode.prototype);
+    SpecularMIPLevelNode.prototype.constructor = SpecularMIPLevelNode;
+    SpecularMIPLevelNode.prototype.nodeType = 'SpecularMIPLevel';
+    SpecularMIPLevelNode.prototype.setTexture = function (texture) {
+        this.texture = texture;
+        return this;
+    };
+    SpecularMIPLevelNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            this.maxMIPLevel = this.maxMIPLevel || new MaxMIPLevelNode();
+            this.maxMIPLevel.texture = this.texture;
+            var getSpecularMIPLevel = builder.include(SpecularMIPLevelNode.Nodes.getSpecularMIPLevel);
+            return builder.format(getSpecularMIPLevel + '( ' + this.roughness.build(builder, 'f') + ', ' + this.maxMIPLevel.build(builder, 'f') + ' )', this.type, output);
+        } else {
+            console.warn('THREE.SpecularMIPLevelNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('0.0', this.type, output);
+        }
+    };
+    SpecularMIPLevelNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.texture = source.texture;
+        this.roughness = source.roughness;
+        return this;
+    };
+    SpecularMIPLevelNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.texture = this.texture;
+            data.roughness = this.roughness;
+        }
+        return data;
+    };
+    return SpecularMIPLevelNode;
+});
+define('skylark-threejs-ex/nodes/utils/SubSlotNode',[
+    '../core/TempNode'
+], function (
+    TempNode
+) {
+    'use strict';
+    function SubSlotNode(slots) {
+        TempNode.call(this);
+        this.slots = slots || {};
+    }
+    SubSlotNode.prototype = Object.create(TempNode.prototype);
+    SubSlotNode.prototype.constructor = SubSlotNode;
+    SubSlotNode.prototype.nodeType = 'SubSlot';
+    SubSlotNode.prototype.getType = function (builder, output) {
+        return output;
+    };
+    SubSlotNode.prototype.generate = function (builder, output) {
+        if (this.slots[builder.slot]) {
+            return this.slots[builder.slot].build(builder, output);
+        }
+        return builder.format('0.0', 'f', output);
+    };
+    SubSlotNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        for (var prop in source.slots) {
+            this.slots[prop] = source.slots[prop];
+        }
+        return this;
+    };
+    SubSlotNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.slots = {};
+            for (var prop in this.slots) {
+                var slot = this.slots[prop];
+                if (slot) {
+                    data.slots[prop] = slot.toJSON(meta).uuid;
+                }
+            }
+        }
+        return data;
+    };
+    return SubSlotNode;
+});
+define('skylark-threejs-ex/nodes/effects/BlurNode',[
+    "skylark-threejs",
+    '../core/TempNode',
+    '../core/FunctionNode',
+    '../inputs/FloatNode',
+    '../inputs/Vector2Node',
+    '../accessors/UVNode'
+], function (
+    THREE, 
+    TempNode, 
+    FunctionNode, 
+    FloatNode, 
+    Vector2Node, 
+    UVNode
+) {
+    'use strict';
+    function BlurNode(value, uv, radius, size) {
+        TempNode.call(this, 'v4');
+        this.value = value;
+        this.uv = uv || new UVNode();
+        this.radius = radius || new Vector2Node(1, 1);
+        this.size = size;
+        this.blurX = true;
+        this.blurY = true;
+        this.horizontal = new FloatNode(1 / 64);
+        this.vertical = new FloatNode(1 / 64);
+    }
+    BlurNode.Nodes = function () {
+        var blurX = new FunctionNode([
+            'vec4 blurX( sampler2D texture, vec2 uv, float s ) {',
+            '\tvec4 sum = vec4( 0.0 );',
+            '\tsum += texture2D( texture, vec2( uv.x - 4.0 * s, uv.y ) ) * 0.051;',
+            '\tsum += texture2D( texture, vec2( uv.x - 3.0 * s, uv.y ) ) * 0.0918;',
+            '\tsum += texture2D( texture, vec2( uv.x - 2.0 * s, uv.y ) ) * 0.12245;',
+            '\tsum += texture2D( texture, vec2( uv.x - 1.0 * s, uv.y ) ) * 0.1531;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y ) ) * 0.1633;',
+            '\tsum += texture2D( texture, vec2( uv.x + 1.0 * s, uv.y ) ) * 0.1531;',
+            '\tsum += texture2D( texture, vec2( uv.x + 2.0 * s, uv.y ) ) * 0.12245;',
+            '\tsum += texture2D( texture, vec2( uv.x + 3.0 * s, uv.y ) ) * 0.0918;',
+            '\tsum += texture2D( texture, vec2( uv.x + 4.0 * s, uv.y ) ) * 0.051;',
+            '\treturn sum * .667;',
+            '}'
+        ].join('\n'));
+        var blurY = new FunctionNode([
+            'vec4 blurY( sampler2D texture, vec2 uv, float s ) {',
+            '\tvec4 sum = vec4( 0.0 );',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y - 4.0 * s ) ) * 0.051;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y - 3.0 * s ) ) * 0.0918;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y - 2.0 * s ) ) * 0.12245;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y - 1.0 * s ) ) * 0.1531;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y ) ) * 0.1633;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y + 1.0 * s ) ) * 0.1531;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y + 2.0 * s ) ) * 0.12245;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y + 3.0 * s ) ) * 0.0918;',
+            '\tsum += texture2D( texture, vec2( uv.x, uv.y + 4.0 * s ) ) * 0.051;',
+            '\treturn sum * .667;',
+            '}'
+        ].join('\n'));
+        return {
+            blurX: blurX,
+            blurY: blurY
+        };
+    }();
+    BlurNode.prototype = Object.create(TempNode.prototype);
+    BlurNode.prototype.constructor = BlurNode;
+    BlurNode.prototype.nodeType = 'Blur';
+    BlurNode.prototype.updateFrame = function () {
+        if (this.size) {
+            this.horizontal.value = this.radius.x / this.size.x;
+            this.vertical.value = this.radius.y / this.size.y;
+        } else if (this.value.value && this.value.value.image) {
+            var image = this.value.value.image;
+            this.horizontal.value = this.radius.x / image.width;
+            this.vertical.value = this.radius.y / image.height;
+        }
+    };
+    BlurNode.prototype.generate = function (builder, output) {
+        if (builder.isShader('fragment')) {
+            var blurCode = [], code;
+            var blurX = builder.include(BlurNode.Nodes.blurX), blurY = builder.include(BlurNode.Nodes.blurY);
+            if (this.blurX) {
+                blurCode.push(blurX + '( ' + this.value.build(builder, 'sampler2D') + ', ' + this.uv.build(builder, 'v2') + ', ' + this.horizontal.build(builder, 'f') + ' )');
+            }
+            if (this.blurY) {
+                blurCode.push(blurY + '( ' + this.value.build(builder, 'sampler2D') + ', ' + this.uv.build(builder, 'v2') + ', ' + this.vertical.build(builder, 'f') + ' )');
+            }
+            if (blurCode.length == 2)
+                code = '( ' + blurCode.join(' + ') + ' / 2.0 )';
+            else if (blurCode.length)
+                code = '( ' + blurCode[0] + ' )';
+            else
+                code = 'vec4( 0.0 )';
+            return builder.format(code, this.getType(builder), output);
+        } else {
+            console.warn('THREE.BlurNode is not compatible with ' + builder.shader + ' shader.');
+            return builder.format('vec4( 0.0 )', this.getType(builder), output);
+        }
+    };
+    BlurNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.value = source.value;
+        this.uv = source.uv;
+        this.radius = source.radius;
+        if (source.size !== undefined)
+            this.size = new THREE.Vector2(source.size.x, source.size.y);
+        this.blurX = source.blurX;
+        this.blurY = source.blurY;
+        return this;
+    };
+    BlurNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.value = this.value.toJSON(meta).uuid;
+            data.uv = this.uv.toJSON(meta).uuid;
+            data.radius = this.radius.toJSON(meta).uuid;
+            if (this.size)
+                data.size = {
+                    x: this.size.x,
+                    y: this.size.y
+                };
+            data.blurX = this.blurX;
+            data.blurY = this.blurY;
+        }
+        return data;
+    };
+    return BlurNode;
+});
+define('skylark-threejs-ex/nodes/effects/LuminanceNode',[
+    '../core/TempNode',
+    '../core/ConstNode',
+    '../core/FunctionNode'
+], function (
+    TempNode, 
+    ConstNode, 
+    FunctionNode
+) {
+    'use strict';
+    function LuminanceNode(rgb) {
+        TempNode.call(this, 'f');
+        this.rgb = rgb;
+    }
+    LuminanceNode.Nodes = function () {
+        var LUMA = new ConstNode('vec3 LUMA vec3( 0.2125, 0.7154, 0.0721 )');
+        var luminance = new FunctionNode([
+            'float luminance( vec3 rgb ) {',
+            '\treturn dot( rgb, LUMA );',
+            '}'
+        ].join('\n'), [LUMA]);
+        return {
+            LUMA: LUMA,
+            luminance: luminance
+        };
+    }();
+    LuminanceNode.prototype = Object.create(TempNode.prototype);
+    LuminanceNode.prototype.constructor = LuminanceNode;
+    LuminanceNode.prototype.nodeType = 'Luminance';
+    LuminanceNode.prototype.generate = function (builder, output) {
+        var luminance = builder.include(LuminanceNode.Nodes.luminance);
+        return builder.format(luminance + '( ' + this.rgb.build(builder, 'v3') + ' )', this.getType(builder), output);
+    };
+    LuminanceNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.rgb = source.rgb;
+        return this;
+    };
+    LuminanceNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.rgb = this.rgb.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return LuminanceNode;
+});
+define('skylark-threejs-ex/nodes/effects/ColorAdjustmentNode',[
+    '../core/TempNode',
+    '../core/FunctionNode',
+    './LuminanceNode'
+], function (
+    TempNode, 
+    FunctionNode, 
+    LuminanceNode
+) {
+    'use strict';
+    function ColorAdjustmentNode(rgb, adjustment, method) {
+        TempNode.call(this, 'v3');
+        this.rgb = rgb;
+        this.adjustment = adjustment;
+        this.method = method || ColorAdjustmentNode.SATURATION;
+    }
+    ColorAdjustmentNode.Nodes = function () {
+        var hue = new FunctionNode([
+            'vec3 hue(vec3 rgb, float adjustment) {',
+            '\tconst mat3 RGBtoYIQ = mat3(0.299, 0.587, 0.114, 0.595716, -0.274453, -0.321263, 0.211456, -0.522591, 0.311135);',
+            '\tconst mat3 YIQtoRGB = mat3(1.0, 0.9563, 0.6210, 1.0, -0.2721, -0.6474, 1.0, -1.107, 1.7046);',
+            '\tvec3 yiq = RGBtoYIQ * rgb;',
+            '\tfloat hue = atan(yiq.z, yiq.y) + adjustment;',
+            '\tfloat chroma = sqrt(yiq.z * yiq.z + yiq.y * yiq.y);',
+            '\treturn YIQtoRGB * vec3(yiq.x, chroma * cos(hue), chroma * sin(hue));',
+            '}'
+        ].join('\n'));
+        var saturation = new FunctionNode([
+            'vec3 saturation(vec3 rgb, float adjustment) {',
+            '\tvec3 intensity = vec3( luminance( rgb ) );',
+            '\treturn mix( intensity, rgb, adjustment );',
+            '}'
+        ].join('\n'), [LuminanceNode.Nodes.luminance]);
+        var vibrance = new FunctionNode([
+            'vec3 vibrance(vec3 rgb, float adjustment) {',
+            '\tfloat average = (rgb.r + rgb.g + rgb.b) / 3.0;',
+            '\tfloat mx = max(rgb.r, max(rgb.g, rgb.b));',
+            '\tfloat amt = (mx - average) * (-3.0 * adjustment);',
+            '\treturn mix(rgb.rgb, vec3(mx), amt);',
+            '}'
+        ].join('\n'));
+        return {
+            hue: hue,
+            saturation: saturation,
+            vibrance: vibrance
+        };
+    }();
+    ColorAdjustmentNode.SATURATION = 'saturation';
+    ColorAdjustmentNode.HUE = 'hue';
+    ColorAdjustmentNode.VIBRANCE = 'vibrance';
+    ColorAdjustmentNode.BRIGHTNESS = 'brightness';
+    ColorAdjustmentNode.CONTRAST = 'contrast';
+    ColorAdjustmentNode.prototype = Object.create(TempNode.prototype);
+    ColorAdjustmentNode.prototype.constructor = ColorAdjustmentNode;
+    ColorAdjustmentNode.prototype.nodeType = 'ColorAdjustment';
+    ColorAdjustmentNode.prototype.generate = function (builder, output) {
+        var rgb = this.rgb.build(builder, 'v3'), adjustment = this.adjustment.build(builder, 'f');
+        switch (this.method) {
+        case ColorAdjustmentNode.BRIGHTNESS:
+            return builder.format('( ' + rgb + ' + ' + adjustment + ' )', this.getType(builder), output);
+            break;
+        case ColorAdjustmentNode.CONTRAST:
+            return builder.format('( ' + rgb + ' * ' + adjustment + ' )', this.getType(builder), output);
+            break;
+        }
+        var method = builder.include(ColorAdjustmentNode.Nodes[this.method]);
+        return builder.format(method + '( ' + rgb + ', ' + adjustment + ' )', this.getType(builder), output);
+    };
+    ColorAdjustmentNode.prototype.copy = function (source) {
+        TempNode.prototype.copy.call(this, source);
+        this.rgb = source.rgb;
+        this.adjustment = source.adjustment;
+        this.method = source.method;
+        return this;
+    };
+    ColorAdjustmentNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            data.rgb = this.rgb.toJSON(meta).uuid;
+            data.adjustment = this.adjustment.toJSON(meta).uuid;
+            data.method = this.method;
+        }
+        return data;
+    };
+    return ColorAdjustmentNode;
+});
+define('skylark-threejs-ex/nodes/materials/nodes/SpriteNode',[
+    'skylark-threejs',
+    '../../core/Node',
+    '../../inputs/ColorNode'
+], function (
+    THREE, 
+    Node, 
+    ColorNode
+) {
+    'use strict';
+    function SpriteNode() {
+        Node.call(this);
+        this.color = new ColorNode(15658734);
+        this.spherical = true;
+    }
+    SpriteNode.prototype = Object.create(Node.prototype);
+    SpriteNode.prototype.constructor = SpriteNode;
+    SpriteNode.prototype.nodeType = 'Sprite';
+    SpriteNode.prototype.build = function (builder) {
+        var output;
+        builder.define('SPRITE');
+        builder.requires.lights = false;
+        builder.requires.transparent = this.alpha !== undefined;
+        if (builder.isShader('vertex')) {
+            var position = this.position ? this.position.analyzeAndFlow(builder, 'v3', { cache: 'position' }) : undefined;
+            builder.mergeUniform(THREE.UniformsUtils.merge([THREE.UniformsLib.fog]));
+            builder.addParsCode([
+                '#include <fog_pars_vertex>',
+                '#include <logdepthbuf_pars_vertex>',
+                '#include <clipping_planes_pars_vertex>'
+            ].join('\n'));
+            output = [
+                '#include <clipping_planes_fragment>',
+                '#include <begin_vertex>'
+            ];
+            if (position) {
+                output.push(position.code, position.result ? 'transformed = ' + position.result + ';' : '');
+            }
+            output.push('#include <project_vertex>', '#include <fog_vertex>', 'mat4 modelViewMtx = modelViewMatrix;', 'mat4 modelMtx = modelMatrix;', 'modelMtx[3][0] = 0.0;', 'modelMtx[3][1] = 0.0;', 'modelMtx[3][2] = 0.0;');
+            if (!this.spherical) {
+                output.push('modelMtx[1][1] = 1.0;');
+            }
+            output.push('modelViewMtx[0][0] = 1.0;', 'modelViewMtx[0][1] = 0.0;', 'modelViewMtx[0][2] = 0.0;');
+            if (this.spherical) {
+                output.push('modelViewMtx[1][0] = 0.0;', 'modelViewMtx[1][1] = 1.0;', 'modelViewMtx[1][2] = 0.0;');
+            }
+            output.push('modelViewMtx[2][0] = 0.0;', 'modelViewMtx[2][1] = 0.0;', 'modelViewMtx[2][2] = 1.0;', 'gl_Position = projectionMatrix * modelViewMtx * modelMtx * vec4( transformed, 1.0 );', '#include <logdepthbuf_vertex>', '#include <clipping_planes_vertex>', '#include <fog_vertex>');
+        } else {
+            builder.addParsCode([
+                '#include <fog_pars_fragment>',
+                '#include <logdepthbuf_pars_fragment>',
+                '#include <clipping_planes_pars_fragment>'
+            ].join('\n'));
+            builder.addCode([
+                '#include <clipping_planes_fragment>',
+                '#include <logdepthbuf_fragment>'
+            ].join('\n'));
+            if (this.mask)
+                this.mask.analyze(builder);
+            if (this.alpha)
+                this.alpha.analyze(builder);
+            this.color.analyze(builder, { slot: 'color' });
+            var mask = this.mask ? this.mask.flow(builder, 'b') : undefined, alpha = this.alpha ? this.alpha.flow(builder, 'f') : undefined, color = this.color.flow(builder, 'c', { slot: 'color' }), output = [];
+            if (mask) {
+                output.push(mask.code, 'if ( ! ' + mask.result + ' ) discard;');
+            }
+            if (alpha) {
+                output.push(alpha.code, '#ifdef ALPHATEST', 'if ( ' + alpha.result + ' <= ALPHATEST ) discard;', '#endif', color.code, 'gl_FragColor = vec4( ' + color.result + ', ' + alpha.result + ' );');
+            } else {
+                output.push(color.code, 'gl_FragColor = vec4( ' + color.result + ', 1.0 );');
+            }
+            output.push('#include <tonemapping_fragment>', '#include <encodings_fragment>', '#include <fog_fragment>');
+        }
+        return output.join('\n');
+    };
+    SpriteNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        if (source.position)
+            this.position = source.position;
+        this.color = source.color;
+        if (source.spherical !== undefined)
+            this.spherical = source.spherical;
+        if (source.mask)
+            this.mask = source.mask;
+        if (source.alpha)
+            this.alpha = source.alpha;
+        return this;
+    };
+    SpriteNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            if (this.position)
+                data.position = this.position.toJSON(meta).uuid;
+            data.color = this.color.toJSON(meta).uuid;
+            if (this.spherical === false)
+                data.spherical = false;
+            if (this.mask)
+                data.mask = this.mask.toJSON(meta).uuid;
+            if (this.alpha)
+                data.alpha = this.alpha.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return SpriteNode;
+});
+define('skylark-threejs-ex/nodes/materials/nodes/PhongNode',[
+    'skylark-threejs',
+    '../../core/Node',
+    '../../inputs/ColorNode',
+    '../../inputs/FloatNode'
+], function (
+    THREE, 
+    Node, 
+    ColorNode, 
+    FloatNode
+) {
+    'use strict';
+    function PhongNode() {
+        Node.call(this);
+        this.color = new ColorNode(15658734);
+        this.specular = new ColorNode(1118481);
+        this.shininess = new FloatNode(30);
+    }
+    PhongNode.prototype = Object.create(Node.prototype);
+    PhongNode.prototype.constructor = PhongNode;
+    PhongNode.prototype.nodeType = 'Phong';
+    PhongNode.prototype.build = function (builder) {
+        var code;
+        builder.define('PHONG');
+        builder.requires.lights = true;
+        if (builder.isShader('vertex')) {
+            var position = this.position ? this.position.analyzeAndFlow(builder, 'v3', { cache: 'position' }) : undefined;
+            builder.mergeUniform(THREE.UniformsUtils.merge([
+                THREE.UniformsLib.fog,
+                THREE.UniformsLib.lights
+            ]));
+            builder.addParsCode([
+                'varying vec3 vViewPosition;',
+                '#ifndef FLAT_SHADED',
+                '\tvarying vec3 vNormal;',
+                '#endif',
+                '#include <fog_pars_vertex>',
+                '#include <morphtarget_pars_vertex>',
+                '#include <skinning_pars_vertex>',
+                '#include <shadowmap_pars_vertex>',
+                '#include <logdepthbuf_pars_vertex>',
+                '#include <clipping_planes_pars_vertex>'
+            ].join('\n'));
+            var output = [
+                '#include <beginnormal_vertex>',
+                '#include <morphnormal_vertex>',
+                '#include <skinbase_vertex>',
+                '#include <skinnormal_vertex>',
+                '#include <defaultnormal_vertex>',
+                '#ifndef FLAT_SHADED',
+                '\tvNormal = normalize( transformedNormal );',
+                '#endif',
+                '#include <begin_vertex>'
+            ];
+            if (position) {
+                output.push(position.code, position.result ? 'transformed = ' + position.result + ';' : '');
+            }
+            output.push('\t#include <morphtarget_vertex>', '\t#include <skinning_vertex>', '\t#include <project_vertex>', '\t#include <fog_vertex>', '\t#include <logdepthbuf_vertex>', '\t#include <clipping_planes_vertex>', '\tvViewPosition = - mvPosition.xyz;', '\t#include <worldpos_vertex>', '\t#include <shadowmap_vertex>', '\t#include <fog_vertex>');
+            code = output.join('\n');
+        } else {
+            if (this.mask)
+                this.mask.analyze(builder);
+            this.color.analyze(builder, { slot: 'color' });
+            this.specular.analyze(builder);
+            this.shininess.analyze(builder);
+            if (this.alpha)
+                this.alpha.analyze(builder);
+            if (this.normal)
+                this.normal.analyze(builder);
+            if (this.light)
+                this.light.analyze(builder, { cache: 'light' });
+            if (this.ao)
+                this.ao.analyze(builder);
+            if (this.ambient)
+                this.ambient.analyze(builder);
+            if (this.shadow)
+                this.shadow.analyze(builder);
+            if (this.emissive)
+                this.emissive.analyze(builder, { slot: 'emissive' });
+            if (this.environment)
+                this.environment.analyze(builder, { slot: 'environment' });
+            if (this.environmentAlpha && this.environment)
+                this.environmentAlpha.analyze(builder);
+            var mask = this.mask ? this.mask.flow(builder, 'b') : undefined;
+            var color = this.color.flow(builder, 'c', { slot: 'color' });
+            var specular = this.specular.flow(builder, 'c');
+            var shininess = this.shininess.flow(builder, 'f');
+            var alpha = this.alpha ? this.alpha.flow(builder, 'f') : undefined;
+            var normal = this.normal ? this.normal.flow(builder, 'v3') : undefined;
+            var light = this.light ? this.light.flow(builder, 'v3', { cache: 'light' }) : undefined;
+            var ao = this.ao ? this.ao.flow(builder, 'f') : undefined;
+            var ambient = this.ambient ? this.ambient.flow(builder, 'c') : undefined;
+            var shadow = this.shadow ? this.shadow.flow(builder, 'c') : undefined;
+            var emissive = this.emissive ? this.emissive.flow(builder, 'c', { slot: 'emissive' }) : undefined;
+            var environment = this.environment ? this.environment.flow(builder, 'c', { slot: 'environment' }) : undefined;
+            var environmentAlpha = this.environmentAlpha && this.environment ? this.environmentAlpha.flow(builder, 'f') : undefined;
+            builder.requires.transparent = alpha !== undefined;
+            builder.addParsCode([
+                '#include <fog_pars_fragment>',
+                '#include <bsdfs>',
+                '#include <lights_pars_begin>',
+                '#include <lights_phong_pars_fragment>',
+                '#include <shadowmap_pars_fragment>',
+                '#include <logdepthbuf_pars_fragment>'
+            ].join('\n'));
+            var output = [
+                '#include <normal_fragment_begin>',
+                '\tBlinnPhongMaterial material;'
+            ];
+            if (mask) {
+                output.push(mask.code, 'if ( ! ' + mask.result + ' ) discard;');
+            }
+            output.push(color.code, '\tvec3 diffuseColor = ' + color.result + ';', '\tReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );', '#include <logdepthbuf_fragment>', specular.code, '\tvec3 specular = ' + specular.result + ';', shininess.code, '\tfloat shininess = max( 0.0001, ' + shininess.result + ' );', '\tfloat specularStrength = 1.0;');
+            if (alpha) {
+                output.push(alpha.code, '#ifdef ALPHATEST', 'if ( ' + alpha.result + ' <= ALPHATEST ) discard;', '#endif');
+            }
+            if (normal) {
+                output.push(normal.code, 'normal = ' + normal.result + ';');
+            }
+            output.push('material.diffuseColor = ' + (light ? 'vec3( 1.0 )' : 'diffuseColor') + ';');
+            output.push('material.specularColor = specular;', 'material.specularShininess = shininess;', 'material.specularStrength = specularStrength;', '#include <lights_fragment_begin>', '#include <lights_fragment_end>');
+            if (light) {
+                output.push(light.code, 'reflectedLight.directDiffuse = ' + light.result + ';');
+                output.push('reflectedLight.directDiffuse *= diffuseColor;', 'reflectedLight.indirectDiffuse *= diffuseColor;');
+            }
+            if (ao) {
+                output.push(ao.code, 'reflectedLight.indirectDiffuse *= ' + ao.result + ';');
+            }
+            if (ambient) {
+                output.push(ambient.code, 'reflectedLight.indirectDiffuse += ' + ambient.result + ';');
+            }
+            if (shadow) {
+                output.push(shadow.code, 'reflectedLight.directDiffuse *= ' + shadow.result + ';', 'reflectedLight.directSpecular *= ' + shadow.result + ';');
+            }
+            if (emissive) {
+                output.push(emissive.code, 'reflectedLight.directDiffuse += ' + emissive.result + ';');
+            }
+            output.push('vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular;');
+            if (environment) {
+                output.push(environment.code);
+                if (environmentAlpha) {
+                    output.push(environmentAlpha.code, 'outgoingLight = mix( outgoingLight, ' + environment.result + ', ' + environmentAlpha.result + ' );');
+                } else {
+                    output.push('outgoingLight = ' + environment.result + ';');
+                }
+            }
+            if (alpha) {
+                output.push('gl_FragColor = vec4( outgoingLight, ' + alpha.result + ' );');
+            } else {
+                output.push('gl_FragColor = vec4( outgoingLight, 1.0 );');
+            }
+            output.push('#include <tonemapping_fragment>', '#include <encodings_fragment>', '#include <fog_fragment>', '#include <premultiplied_alpha_fragment>');
+            code = output.join('\n');
+        }
+        return code;
+    };
+    PhongNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        if (source.position)
+            this.position = source.position;
+        this.color = source.color;
+        this.specular = source.specular;
+        this.shininess = source.shininess;
+        if (source.mask)
+            this.mask = source.mask;
+        if (source.alpha)
+            this.alpha = source.alpha;
+        if (source.normal)
+            this.normal = source.normal;
+        if (source.light)
+            this.light = source.light;
+        if (source.shadow)
+            this.shadow = source.shadow;
+        if (source.ao)
+            this.ao = source.ao;
+        if (source.emissive)
+            this.emissive = source.emissive;
+        if (source.ambient)
+            this.ambient = source.ambient;
+        if (source.environment)
+            this.environment = source.environment;
+        if (source.environmentAlpha)
+            this.environmentAlpha = source.environmentAlpha;
+        return this;
+    };
+    PhongNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            if (this.position)
+                data.position = this.position.toJSON(meta).uuid;
+            data.color = this.color.toJSON(meta).uuid;
+            data.specular = this.specular.toJSON(meta).uuid;
+            data.shininess = this.shininess.toJSON(meta).uuid;
+            if (this.mask)
+                data.mask = this.mask.toJSON(meta).uuid;
+            if (this.alpha)
+                data.alpha = this.alpha.toJSON(meta).uuid;
+            if (this.normal)
+                data.normal = this.normal.toJSON(meta).uuid;
+            if (this.light)
+                data.light = this.light.toJSON(meta).uuid;
+            if (this.ao)
+                data.ao = this.ao.toJSON(meta).uuid;
+            if (this.ambient)
+                data.ambient = this.ambient.toJSON(meta).uuid;
+            if (this.shadow)
+                data.shadow = this.shadow.toJSON(meta).uuid;
+            if (this.emissive)
+                data.emissive = this.emissive.toJSON(meta).uuid;
+            if (this.environment)
+                data.environment = this.environment.toJSON(meta).uuid;
+            if (this.environmentAlpha)
+                data.environmentAlpha = this.environmentAlpha.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return PhongNode;
+});
+define('skylark-threejs-ex/nodes/materials/nodes/StandardNode',[
+    'skylark-threejs',
+    '../../core/Node',
+    '../../core/ExpressionNode',
+    '../../inputs/ColorNode',
+    '../../inputs/FloatNode',
+    '../../utils/SpecularMIPLevelNode'
+], function (
+    THREE, 
+    Node, 
+    ExpressionNode, 
+    ColorNode, 
+    FloatNode, 
+    SpecularMIPLevelNode
+) {
+    'use strict';
+    function StandardNode() {
+        Node.call(this);
+        this.color = new ColorNode(16777215);
+        this.roughness = new FloatNode(1);
+        this.metalness = new FloatNode(0);
+    }
+    StandardNode.prototype = Object.create(Node.prototype);
+    StandardNode.prototype.constructor = StandardNode;
+    StandardNode.prototype.nodeType = 'Standard';
+    StandardNode.prototype.build = function (builder) {
+        var code;
+        builder.define('STANDARD');
+        var useClearcoat = this.clearcoat || this.clearcoatRoughness || this.clearCoatNormal;
+        if (useClearcoat) {
+            builder.define('CLEARCOAT');
+        }
+        builder.requires.lights = true;
+        builder.extensions.derivatives = true;
+        builder.extensions.shaderTextureLOD = true;
+        if (builder.isShader('vertex')) {
+            var position = this.position ? this.position.analyzeAndFlow(builder, 'v3', { cache: 'position' }) : undefined;
+            builder.mergeUniform(THREE.UniformsUtils.merge([
+                THREE.UniformsLib.fog,
+                THREE.UniformsLib.lights
+            ]));
+            if (THREE.UniformsLib.LTC_1) {
+                builder.uniforms.ltc_1 = { value: undefined };
+                builder.uniforms.ltc_2 = { value: undefined };
+            }
+            builder.addParsCode([
+                'varying vec3 vViewPosition;',
+                '#ifndef FLAT_SHADED',
+                '\tvarying vec3 vNormal;',
+                '#endif',
+                '#include <fog_pars_vertex>',
+                '#include <morphtarget_pars_vertex>',
+                '#include <skinning_pars_vertex>',
+                '#include <shadowmap_pars_vertex>',
+                '#include <logdepthbuf_pars_vertex>',
+                '#include <clipping_planes_pars_vertex>'
+            ].join('\n'));
+            var output = [
+                '#include <beginnormal_vertex>',
+                '#include <morphnormal_vertex>',
+                '#include <skinbase_vertex>',
+                '#include <skinnormal_vertex>',
+                '#include <defaultnormal_vertex>',
+                '#ifndef FLAT_SHADED',
+                '\tvNormal = normalize( transformedNormal );',
+                '#endif',
+                '#include <begin_vertex>'
+            ];
+            if (position) {
+                output.push(position.code, position.result ? 'transformed = ' + position.result + ';' : '');
+            }
+            output.push('#include <morphtarget_vertex>', '#include <skinning_vertex>', '#include <project_vertex>', '#include <fog_vertex>', '#include <logdepthbuf_vertex>', '#include <clipping_planes_vertex>', '\tvViewPosition = - mvPosition.xyz;', '#include <worldpos_vertex>', '#include <shadowmap_vertex>');
+            code = output.join('\n');
+        } else {
+            var specularRoughness = new ExpressionNode('material.specularRoughness', 'f');
+            var clearcoatRoughness = new ExpressionNode('material.clearcoatRoughness', 'f');
+            var contextEnvironment = {
+                roughness: specularRoughness,
+                bias: new SpecularMIPLevelNode(specularRoughness),
+                viewNormal: new ExpressionNode('normal', 'v3'),
+                worldNormal: new ExpressionNode('inverseTransformDirection( geometry.normal, viewMatrix )', 'v3'),
+                gamma: true
+            };
+            var contextGammaOnly = { gamma: true };
+            var contextClearcoatEnvironment = {
+                roughness: clearcoatRoughness,
+                bias: new SpecularMIPLevelNode(clearcoatRoughness),
+                viewNormal: new ExpressionNode('clearcoatNormal', 'v3'),
+                worldNormal: new ExpressionNode('inverseTransformDirection( geometry.clearcoatNormal, viewMatrix )', 'v3'),
+                gamma: true
+            };
+            if (this.mask)
+                this.mask.analyze(builder);
+            this.color.analyze(builder, {
+                slot: 'color',
+                context: contextGammaOnly
+            });
+            this.roughness.analyze(builder);
+            this.metalness.analyze(builder);
+            if (this.alpha)
+                this.alpha.analyze(builder);
+            if (this.normal)
+                this.normal.analyze(builder);
+            if (this.clearcoat)
+                this.clearcoat.analyze(builder);
+            if (this.clearcoatRoughness)
+                this.clearcoatRoughness.analyze(builder);
+            if (this.clearcoatNormal)
+                this.clearcoatNormal.analyze(builder);
+            if (this.reflectivity)
+                this.reflectivity.analyze(builder);
+            if (this.light)
+                this.light.analyze(builder, { cache: 'light' });
+            if (this.ao)
+                this.ao.analyze(builder);
+            if (this.ambient)
+                this.ambient.analyze(builder);
+            if (this.shadow)
+                this.shadow.analyze(builder);
+            if (this.emissive)
+                this.emissive.analyze(builder, { slot: 'emissive' });
+            if (this.environment) {
+                this.environment.analyze(builder, {
+                    cache: 'radiance',
+                    context: contextEnvironment,
+                    slot: 'radiance'
+                });
+                if (builder.requires.irradiance) {
+                    this.environment.analyze(builder, {
+                        cache: 'irradiance',
+                        context: contextEnvironment,
+                        slot: 'irradiance'
+                    });
+                }
+            }
+            if (this.sheen)
+                this.sheen.analyze(builder);
+            var mask = this.mask ? this.mask.flow(builder, 'b') : undefined;
+            var color = this.color.flow(builder, 'c', {
+                slot: 'color',
+                context: contextGammaOnly
+            });
+            var roughness = this.roughness.flow(builder, 'f');
+            var metalness = this.metalness.flow(builder, 'f');
+            var alpha = this.alpha ? this.alpha.flow(builder, 'f') : undefined;
+            var normal = this.normal ? this.normal.flow(builder, 'v3') : undefined;
+            var clearcoat = this.clearcoat ? this.clearcoat.flow(builder, 'f') : undefined;
+            var clearcoatRoughness = this.clearcoatRoughness ? this.clearcoatRoughness.flow(builder, 'f') : undefined;
+            var clearcoatNormal = this.clearcoatNormal ? this.clearcoatNormal.flow(builder, 'v3') : undefined;
+            var reflectivity = this.reflectivity ? this.reflectivity.flow(builder, 'f') : undefined;
+            var light = this.light ? this.light.flow(builder, 'v3', { cache: 'light' }) : undefined;
+            var ao = this.ao ? this.ao.flow(builder, 'f') : undefined;
+            var ambient = this.ambient ? this.ambient.flow(builder, 'c') : undefined;
+            var shadow = this.shadow ? this.shadow.flow(builder, 'c') : undefined;
+            var emissive = this.emissive ? this.emissive.flow(builder, 'c', { slot: 'emissive' }) : undefined;
+            var environment;
+            if (this.environment) {
+                environment = {
+                    radiance: this.environment.flow(builder, 'c', {
+                        cache: 'radiance',
+                        context: contextEnvironment,
+                        slot: 'radiance'
+                    })
+                };
+                if (builder.requires.irradiance) {
+                    environment.irradiance = this.environment.flow(builder, 'c', {
+                        cache: 'irradiance',
+                        context: contextEnvironment,
+                        slot: 'irradiance'
+                    });
+                }
+            }
+            var clearcoatEnv = useClearcoat && environment ? this.environment.flow(builder, 'c', {
+                cache: 'clearcoat',
+                context: contextClearcoatEnvironment,
+                slot: 'environment'
+            }) : undefined;
+            var sheen = this.sheen ? this.sheen.flow(builder, 'c') : undefined;
+            builder.requires.transparent = alpha !== undefined;
+            builder.addParsCode([
+                'varying vec3 vViewPosition;',
+                '#ifndef FLAT_SHADED',
+                '\tvarying vec3 vNormal;',
+                '#endif',
+                '#include <dithering_pars_fragment>',
+                '#include <fog_pars_fragment>',
+                '#include <bsdfs>',
+                '#include <lights_pars_begin>',
+                '#include <lights_physical_pars_fragment>',
+                '#include <shadowmap_pars_fragment>',
+                '#include <logdepthbuf_pars_fragment>'
+            ].join('\n'));
+            var output = [
+                '#include <clipping_planes_fragment>',
+                '\t#include <normal_fragment_begin>',
+                '\t#include <clearcoat_normal_fragment_begin>',
+                '\tPhysicalMaterial material;',
+                '\tmaterial.diffuseColor = vec3( 1.0 );'
+            ];
+            if (mask) {
+                output.push(mask.code, 'if ( ! ' + mask.result + ' ) discard;');
+            }
+            output.push(color.code, '\tvec3 diffuseColor = ' + color.result + ';', '\tReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );', '#include <logdepthbuf_fragment>', roughness.code, '\tfloat roughnessFactor = ' + roughness.result + ';', metalness.code, '\tfloat metalnessFactor = ' + metalness.result + ';');
+            if (alpha) {
+                output.push(alpha.code, '#ifdef ALPHATEST', '\tif ( ' + alpha.result + ' <= ALPHATEST ) discard;', '#endif');
+            }
+            if (normal) {
+                output.push(normal.code, 'normal = ' + normal.result + ';');
+            }
+            if (clearcoatNormal) {
+                output.push(clearcoatNormal.code, 'clearcoatNormal = ' + clearcoatNormal.result + ';');
+            }
+            output.push('vec3 dxy = max( abs( dFdx( geometryNormal ) ), abs( dFdy( geometryNormal ) ) );', 'float geometryRoughness = max( max( dxy.x, dxy.y ), dxy.z );');
+            output.push('material.diffuseColor = ' + (light ? 'vec3( 1.0 )' : 'diffuseColor * ( 1.0 - metalnessFactor )') + ';', 'material.specularRoughness = max( roughnessFactor, 0.0525 );', 'material.specularRoughness += geometryRoughness;', 'material.specularRoughness = min( material.specularRoughness, 1.0 );', 'material.specularRoughness = clamp( roughnessFactor, 0.04, 1.0 );');
+            if (clearcoat) {
+                output.push(clearcoat.code, 'material.clearcoat = saturate( ' + clearcoat.result + ' );');
+            } else if (useClearcoat) {
+                output.push('material.clearcoat = 0.0;');
+            }
+            if (clearcoatRoughness) {
+                output.push(clearcoatRoughness.code, 'material.clearcoatRoughness = max( ' + clearcoatRoughness.result + ', 0.0525 );', 'material.clearcoatRoughness += geometryRoughness;', 'material.clearcoatRoughness = min( material.clearcoatRoughness, 1.0 );');
+            } else if (useClearcoat) {
+                output.push('material.clearcoatRoughness = 0.0;');
+            }
+            if (sheen) {
+                output.push('material.sheenColor = ' + sheen.result + ';');
+            }
+            if (reflectivity) {
+                output.push(reflectivity.code, 'material.specularColor = mix( vec3( MAXIMUM_SPECULAR_COEFFICIENT * pow2( ' + reflectivity.result + ' ) ), diffuseColor, metalnessFactor );');
+            } else {
+                output.push('material.specularColor = mix( vec3( DEFAULT_SPECULAR_COEFFICIENT ), diffuseColor, metalnessFactor );');
+            }
+            output.push('#include <lights_fragment_begin>');
+            if (light) {
+                output.push(light.code, 'reflectedLight.directDiffuse = ' + light.result + ';');
+                output.push('diffuseColor *= 1.0 - metalnessFactor;', 'reflectedLight.directDiffuse *= diffuseColor;', 'reflectedLight.indirectDiffuse *= diffuseColor;');
+            }
+            if (ao) {
+                output.push(ao.code, 'reflectedLight.indirectDiffuse *= ' + ao.result + ';', 'float dotNV = saturate( dot( geometry.normal, geometry.viewDir ) );', 'reflectedLight.indirectSpecular *= computeSpecularOcclusion( dotNV, ' + ao.result + ', material.specularRoughness );');
+            }
+            if (ambient) {
+                output.push(ambient.code, 'reflectedLight.indirectDiffuse += ' + ambient.result + ';');
+            }
+            if (shadow) {
+                output.push(shadow.code, 'reflectedLight.directDiffuse *= ' + shadow.result + ';', 'reflectedLight.directSpecular *= ' + shadow.result + ';');
+            }
+            if (emissive) {
+                output.push(emissive.code, 'reflectedLight.directDiffuse += ' + emissive.result + ';');
+            }
+            if (environment) {
+                output.push(environment.radiance.code);
+                if (builder.requires.irradiance) {
+                    output.push(environment.irradiance.code);
+                }
+                if (clearcoatEnv) {
+                    output.push(clearcoatEnv.code, 'clearcoatRadiance += ' + clearcoatEnv.result + ';');
+                }
+                output.push('radiance += ' + environment.radiance.result + ';');
+                if (builder.requires.irradiance) {
+                    output.push('iblIrradiance += PI * ' + environment.irradiance.result + ';');
+                }
+            }
+            output.push('#include <lights_fragment_end>');
+            output.push('vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular;');
+            if (alpha) {
+                output.push('gl_FragColor = vec4( outgoingLight, ' + alpha.result + ' );');
+            } else {
+                output.push('gl_FragColor = vec4( outgoingLight, 1.0 );');
+            }
+            output.push('#include <tonemapping_fragment>', '#include <encodings_fragment>', '#include <fog_fragment>', '#include <premultiplied_alpha_fragment>', '#include <dithering_fragment>');
+            code = output.join('\n');
+        }
+        return code;
+    };
+    StandardNode.prototype.copy = function (source) {
+        Node.prototype.copy.call(this, source);
+        if (source.position)
+            this.position = source.position;
+        this.color = source.color;
+        this.roughness = source.roughness;
+        this.metalness = source.metalness;
+        if (source.mask)
+            this.mask = source.mask;
+        if (source.alpha)
+            this.alpha = source.alpha;
+        if (source.normal)
+            this.normal = source.normal;
+        if (source.clearcoat)
+            this.clearcoat = source.clearcoat;
+        if (source.clearcoatRoughness)
+            this.clearcoatRoughness = source.clearcoatRoughness;
+        if (source.clearcoatNormal)
+            this.clearcoatNormal = source.clearcoatNormal;
+        if (source.reflectivity)
+            this.reflectivity = source.reflectivity;
+        if (source.light)
+            this.light = source.light;
+        if (source.shadow)
+            this.shadow = source.shadow;
+        if (source.ao)
+            this.ao = source.ao;
+        if (source.emissive)
+            this.emissive = source.emissive;
+        if (source.ambient)
+            this.ambient = source.ambient;
+        if (source.environment)
+            this.environment = source.environment;
+        if (source.sheen)
+            this.sheen = source.sheen;
+        return this;
+    };
+    StandardNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            if (this.position)
+                data.position = this.position.toJSON(meta).uuid;
+            data.color = this.color.toJSON(meta).uuid;
+            data.roughness = this.roughness.toJSON(meta).uuid;
+            data.metalness = this.metalness.toJSON(meta).uuid;
+            if (this.mask)
+                data.mask = this.mask.toJSON(meta).uuid;
+            if (this.alpha)
+                data.alpha = this.alpha.toJSON(meta).uuid;
+            if (this.normal)
+                data.normal = this.normal.toJSON(meta).uuid;
+            if (this.clearcoat)
+                data.clearcoat = this.clearcoat.toJSON(meta).uuid;
+            if (this.clearcoatRoughness)
+                data.clearcoatRoughness = this.clearcoatRoughness.toJSON(meta).uuid;
+            if (this.clearcoatNormal)
+                data.clearcoatNormal = this.clearcoatNormal.toJSON(meta).uuid;
+            if (this.reflectivity)
+                data.reflectivity = this.reflectivity.toJSON(meta).uuid;
+            if (this.light)
+                data.light = this.light.toJSON(meta).uuid;
+            if (this.shadow)
+                data.shadow = this.shadow.toJSON(meta).uuid;
+            if (this.ao)
+                data.ao = this.ao.toJSON(meta).uuid;
+            if (this.emissive)
+                data.emissive = this.emissive.toJSON(meta).uuid;
+            if (this.ambient)
+                data.ambient = this.ambient.toJSON(meta).uuid;
+            if (this.environment)
+                data.environment = this.environment.toJSON(meta).uuid;
+            if (this.sheen)
+                data.sheen = this.sheen.toJSON(meta).uuid;
+        }
+        return data;
+    };
+    return StandardNode;
+});
+define('skylark-threejs-ex/nodes/materials/nodes/MeshStandardNode',[
+    'skylark-threejs',
+    './StandardNode',
+    '../../inputs/PropertyNode',
+    '../../math/OperatorNode',
+    '../../utils/SwitchNode',
+    '../../misc/NormalMapNode'
+], function (
+    THREE, 
+    StandardNode, 
+    PropertyNode, 
+    OperatorNode, 
+    SwitchNode, 
+    NormalMapNode
+) {
+    'use strict';
+    function MeshStandardNode() {
+        StandardNode.call(this);
+        this.properties = {
+            color: new THREE.Color(16777215),
+            roughness: 0.5,
+            metalness: 0.5,
+            normalScale: new THREE.Vector2(1, 1)
+        };
+        this.inputs = {
+            color: new PropertyNode(this.properties, 'color', 'c'),
+            roughness: new PropertyNode(this.properties, 'roughness', 'f'),
+            metalness: new PropertyNode(this.properties, 'metalness', 'f'),
+            normalScale: new PropertyNode(this.properties, 'normalScale', 'v2')
+        };
+    }
+    MeshStandardNode.prototype = Object.create(StandardNode.prototype);
+    MeshStandardNode.prototype.constructor = MeshStandardNode;
+    MeshStandardNode.prototype.nodeType = 'MeshStandard';
+    MeshStandardNode.prototype.build = function (builder) {
+        var props = this.properties, inputs = this.inputs;
+        if (builder.isShader('fragment')) {
+            var color = builder.findNode(props.color, inputs.color), map = builder.resolve(props.map);
+            this.color = map ? new OperatorNode(color, map, OperatorNode.MUL) : color;
+            var roughness = builder.findNode(props.roughness, inputs.roughness), roughnessMap = builder.resolve(props.roughnessMap);
+            this.roughness = roughnessMap ? new OperatorNode(roughness, new SwitchNode(roughnessMap, 'g'), OperatorNode.MUL) : roughness;
+            var metalness = builder.findNode(props.metalness, inputs.metalness), metalnessMap = builder.resolve(props.metalnessMap);
+            this.metalness = metalnessMap ? new OperatorNode(metalness, new SwitchNode(metalnessMap, 'b'), OperatorNode.MUL) : metalness;
+            if (props.normalMap) {
+                this.normal = new NormalMapNode(builder.resolve(props.normalMap));
+                this.normal.scale = builder.findNode(props.normalScale, inputs.normalScale);
+            } else {
+                this.normal = undefined;
+            }
+            this.environment = builder.resolve(props.envMap);
+        }
+        return StandardNode.prototype.build.call(this, builder);
+    };
+    MeshStandardNode.prototype.toJSON = function (meta) {
+        var data = this.getJSONNode(meta);
+        if (!data) {
+            data = this.createJSONNode(meta);
+            console.warn('.toJSON not implemented in', this);
+        }
+        return data;
+    };
+    return MeshStandardNode;
+});
+define('skylark-threejs-ex/nodes/materials/SpriteNodeMaterial',[
+    './nodes/SpriteNode',
+    './NodeMaterial',
+    '../core/NodeUtils'
+], function (
+    SpriteNode, 
+    NodeMaterial, 
+    NodeUtils
+) {
+    'use strict';
+    function SpriteNodeMaterial() {
+        var node = new SpriteNode();
+        NodeMaterial.call(this, node, node);
+        this.type = 'SpriteNodeMaterial';
+    }
+    SpriteNodeMaterial.prototype = Object.create(NodeMaterial.prototype);
+    SpriteNodeMaterial.prototype.constructor = SpriteNodeMaterial;
+    NodeUtils.addShortcuts(SpriteNodeMaterial.prototype, 'fragment', [
+        'color',
+        'alpha',
+        'mask',
+        'position',
+        'spherical'
+    ]);
+    return SpriteNodeMaterial;
+});
+define('skylark-threejs-ex/nodes/materials/PhongNodeMaterial',[
+    './nodes/PhongNode',
+    './NodeMaterial',
+    '../core/NodeUtils'
+], function (
+    PhongNode, 
+    NodeMaterial, 
+    NodeUtils
+) {
+    'use strict';
+    function PhongNodeMaterial() {
+        var node = new PhongNode();
+        NodeMaterial.call(this, node, node);
+        this.type = 'PhongNodeMaterial';
+    }
+    PhongNodeMaterial.prototype = Object.create(NodeMaterial.prototype);
+    PhongNodeMaterial.prototype.constructor = PhongNodeMaterial;
+    NodeUtils.addShortcuts(PhongNodeMaterial.prototype, 'fragment', [
+        'color',
+        'alpha',
+        'specular',
+        'shininess',
+        'normal',
+        'emissive',
+        'ambient',
+        'light',
+        'shadow',
+        'ao',
+        'environment',
+        'environmentAlpha',
+        'mask',
+        'position'
+    ]);
+    return PhongNodeMaterial;
+});
+define('skylark-threejs-ex/nodes/materials/StandardNodeMaterial',[
+    './nodes/StandardNode',
+    './NodeMaterial',
+    '../core/NodeUtils'
+], function (
+    StandardNode, 
+    NodeMaterial, 
+    NodeUtils
+) {
+    'use strict';
+    function StandardNodeMaterial() {
+        var node = new StandardNode();
+        NodeMaterial.call(this, node, node);
+        this.type = 'StandardNodeMaterial';
+    }
+    StandardNodeMaterial.prototype = Object.create(NodeMaterial.prototype);
+    StandardNodeMaterial.prototype.constructor = StandardNodeMaterial;
+    NodeUtils.addShortcuts(StandardNodeMaterial.prototype, 'fragment', [
+        'color',
+        'alpha',
+        'roughness',
+        'metalness',
+        'reflectivity',
+        'clearcoat',
+        'clearcoatRoughness',
+        'clearcoatNormal',
+        'normal',
+        'emissive',
+        'ambient',
+        'light',
+        'shadow',
+        'ao',
+        'environment',
+        'mask',
+        'position',
+        'sheen'
+    ]);
+    return StandardNodeMaterial;
+});
+define('skylark-threejs-ex/nodes/materials/MeshStandardNodeMaterial',[
+    './nodes/MeshStandardNode',
+    './NodeMaterial',
+    '../core/NodeUtils'
+], function (
+    MeshStandardNode, 
+    NodeMaterial, 
+    NodeUtils
+) {
+    'use strict';
+    function MeshStandardNodeMaterial() {
+        var node = new MeshStandardNode();
+        NodeMaterial.call(this, node, node);
+        this.type = 'MeshStandardNodeMaterial';
+    }
+    MeshStandardNodeMaterial.prototype = Object.create(NodeMaterial.prototype);
+    MeshStandardNodeMaterial.prototype.constructor = MeshStandardNodeMaterial;
+    NodeUtils.addShortcuts(MeshStandardNodeMaterial.prototype, 'properties', [
+        'color',
+        'roughness',
+        'metalness',
+        'map',
+        'normalMap',
+        'normalScale',
+        'metalnessMap',
+        'roughnessMap',
+        'envMap'
+    ]);
+    return MeshStandardNodeMaterial;
+});
+define('skylark-threejs-ex/nodes/postprocessing/NodePostProcessing',[
+    "skylark-threejs",
+    '../materials/NodeMaterial',
+    '../inputs/ScreenNode'
+], function (
+    THREE, 
+    NodeMaterial, 
+    ScreenNode
+) {
+    'use strict';
+    function NodePostProcessing(renderer, renderTarget) {
+        if (renderTarget === undefined) {
+            var parameters = {
+                minFilter: THREE.LinearFilter,
+                magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat,
+                stencilBuffer: false
+            };
+            var size = renderer.getDrawingBufferSize(new THREE.Vector2());
+            renderTarget = new THREE.WebGLRenderTarget(size.width, size.height, parameters);
+        }
+        this.renderer = renderer;
+        this.renderTarget = renderTarget;
+        this.output = new ScreenNode();
+        this.material = new NodeMaterial();
+        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.scene = new THREE.Scene();
+        this.quad = new THREE.Mesh(new THREE.PlaneBufferGeometry(2, 2), this.material);
+        this.quad.frustumCulled = false;
+        this.scene.add(this.quad);
+        this.needsUpdate = true;
+    }
+    NodePostProcessing.prototype = {
+        constructor: NodePostProcessing,
+        render: function (scene, camera, frame) {
+            if (this.needsUpdate) {
+                this.material.dispose();
+                this.material.fragment.value = this.output;
+                this.material.build();
+                if (this.material.uniforms.renderTexture) {
+                    this.material.uniforms.renderTexture.value = this.renderTarget.texture;
+                }
+                this.needsUpdate = false;
+            }
+            frame.setRenderer(this.renderer).setRenderTexture(this.renderTarget.texture);
+            this.renderer.setRenderTarget(this.renderTarget);
+            this.renderer.render(scene, camera);
+            frame.updateNode(this.material);
+            this.renderer.setRenderTarget(null);
+            this.renderer.render(this.scene, this.camera);
+        },
+        setPixelRatio: function (value) {
+            this.renderer.setPixelRatio(value);
+            var size = this.renderer.getSize(new THREE.Vector2());
+            this.setSize(size.width, size.height);
+        },
+        setSize: function (width, height) {
+            var pixelRatio = this.renderer.getPixelRatio();
+            this.renderTarget.setSize(width * pixelRatio, height * pixelRatio);
+            this.renderer.setSize(width, height);
+        },
+        copy: function (source) {
+            this.output = source.output;
+            return this;
+        },
+        toJSON: function (meta) {
+            var isRootObject = meta === undefined || typeof meta === 'string';
+            if (isRootObject) {
+                meta = { nodes: {} };
+            }
+            if (meta && !meta.post)
+                meta.post = {};
+            if (!meta.post[this.uuid]) {
+                var data = {};
+                data.uuid = this.uuid;
+                data.type = 'NodePostProcessing';
+                meta.post[this.uuid] = data;
+                if (this.name !== '')
+                    data.name = this.name;
+                if (JSON.stringify(this.userData) !== '{}')
+                    data.userData = this.userData;
+                data.output = this.output.toJSON(meta).uuid;
+            }
+            meta.post = this.uuid;
+            return meta;
+        }
+    };
+    return NodePostProcessing;
+});
+define('skylark-threejs-ex/nodes/Nodes',[
+    "../threex",
+// core
+    './core/Node',
+    './core/TempNode',
+    './core/InputNode',
+    './core/ConstNode',
+    './core/VarNode',
+    './core/StructNode',
+    './core/AttributeNode',
+    './core/FunctionNode',
+    './core/ExpressionNode',
+    './core/FunctionCallNode',
+    './core/NodeLib',
+    './core/NodeUtils',
+    './core/NodeFrame',
+    './core/NodeUniform',
+    './core/NodeBuilder',
+
+    // inputs
+
+    './inputs/BoolNode',
+    './inputs/IntNode',
+    './inputs/FloatNode',
+    './inputs/Vector2Node',
+    './inputs/Vector3Node',
+    './inputs/Vector4Node',
+    './inputs/ColorNode',
+    './inputs/Matrix3Node',
+    './inputs/Matrix4Node',
+    './inputs/TextureNode',
+    './inputs/CubeTextureNode',
+    './inputs/ScreenNode',
+    './inputs/ReflectorNode',
+    './inputs/PropertyNode',
+    './inputs/RTTNode',
+
+    // accessors
+
+    './accessors/UVNode',
+    './accessors/ColorsNode',
+    './accessors/PositionNode',
+    './accessors/NormalNode',
+    './accessors/CameraNode',
+    './accessors/LightNode',
+    './accessors/ReflectNode',
+    './accessors/ScreenUVNode',
+    './accessors/ResolutionNode',
+
+    // math
+
+    './math/MathNode',
+    './math/OperatorNode',
+    './math/CondNode',
+
+    // procedural
+
+    './procedural/NoiseNode',
+    './procedural/CheckerNode',
+
+    // misc
+
+    './misc/TextureCubeUVNode',
+    './misc/TextureCubeNode',
+    './misc/NormalMapNode',
+    './misc/BumpMapNode',
+
+    // utils
+
+    './utils/BypassNode',
+    './utils/JoinNode',
+    './utils/SwitchNode',
+    './utils/TimerNode',
+    './utils/VelocityNode',
+    './utils/UVTransformNode',
+    './utils/MaxMIPLevelNode',
+    './utils/SpecularMIPLevelNode',
+    './utils/ColorSpaceNode',
+    './utils/SubSlotNode',
+
+    // effects
+
+    './effects/BlurNode',
+    './effects/ColorAdjustmentNode',
+    './effects/LuminanceNode',
+
+    // material nodes
+
+    './materials/nodes/RawNode',
+    './materials/nodes/SpriteNode',
+    './materials/nodes/PhongNode',
+    './materials/nodes/StandardNode',
+    './materials/nodes/MeshStandardNode',
+
+    // materials
+
+    './materials/NodeMaterial',
+    './materials/SpriteNodeMaterial',
+    './materials/PhongNodeMaterial',
+    './materials/StandardNodeMaterial',
+    './materials/MeshStandardNodeMaterial',
+
+    // postprocessing
+
+    './postprocessing/NodePostProcessing'
+
+],function (
+        threex,
+        Node,
+        TempNode,
+        InputNode,
+        ConstNode,
+        VarNode,
+        StructNode,
+        AttributeNode,
+        FunctionNode,
+        ExpressionNode,
+        FunctionCallNode,
+        NodeLib,
+        NodeUtils,
+        NodeFrame,
+        NodeUniform,
+        NodeBuilder,
+        BoolNode,
+        IntNode,
+        FloatNode,
+        Vector2Node,
+        Vector3Node,
+        Vector4Node,
+        ColorNode,
+        Matrix3Node,
+        Matrix4Node,
+        TextureNode,
+        CubeTextureNode,
+        ScreenNode,
+        ReflectorNode,
+        PropertyNode,
+        RTTNode,
+        UVNode,
+        ColorsNode,
+        PositionNode,
+        NormalNode,
+        CameraNode,
+        LightNode,
+        ReflectNode,
+        ScreenUVNode,
+        ResolutionNode,
+        MathNode,
+        OperatorNode,
+        CondNode,
+        NoiseNode,
+        CheckerNode,
+        TextureCubeUVNode,
+        TextureCubeNode,
+        NormalMapNode,
+        BumpMapNode,
+        BypassNode,
+        JoinNode,
+        SwitchNode,
+        TimerNode,
+        VelocityNode,
+        UVTransformNode,
+        MaxMIPLevelNode,
+        SpecularMIPLevelNode,
+        ColorSpaceNode,
+        SubSlotNode,
+        BlurNode,
+        ColorAdjustmentNode,
+        LuminanceNode,
+        RawNode,
+        SpriteNode,
+        PhongNode,
+        StandardNode,
+        MeshStandardNode,
+        NodeMaterial,
+        SpriteNodeMaterial,
+        PhongNodeMaterial,
+        StandardNodeMaterial,
+        MeshStandardNodeMaterial,
+        NodePostProcessing
+
+) {
+    'use strict';
+    return threex.node.Nodes = {
+        Node,
+        TempNode,
+        InputNode,
+        ConstNode,
+        VarNode,
+        StructNode,
+        AttributeNode,
+        FunctionNode,
+        ExpressionNode,
+        FunctionCallNode,
+        NodeLib,
+        NodeUtils,
+        NodeFrame,
+        NodeUniform,
+        NodeBuilder,
+        BoolNode,
+        IntNode,
+        FloatNode,
+        Vector2Node,
+        Vector3Node,
+        Vector4Node,
+        ColorNode,
+        Matrix3Node,
+        Matrix4Node,
+        TextureNode,
+        CubeTextureNode,
+        ScreenNode,
+        ReflectorNode,
+        PropertyNode,
+        RTTNode,
+        UVNode,
+        ColorsNode,
+        PositionNode,
+        NormalNode,
+        CameraNode,
+        LightNode,
+        ReflectNode,
+        ScreenUVNode,
+        ResolutionNode,
+        MathNode,
+        OperatorNode,
+        CondNode,
+        NoiseNode,
+        CheckerNode,
+        TextureCubeUVNode,
+        TextureCubeNode,
+        NormalMapNode,
+        BumpMapNode,
+        BypassNode,
+        JoinNode,
+        SwitchNode,
+        TimerNode,
+        VelocityNode,
+        UVTransformNode,
+        MaxMIPLevelNode,
+        SpecularMIPLevelNode,
+        ColorSpaceNode,
+        SubSlotNode,
+        BlurNode,
+        ColorAdjustmentNode,
+        LuminanceNode,
+        RawNode,
+        SpriteNode,
+        PhongNode,
+        StandardNode,
+        MeshStandardNode,
+        NodeMaterial,
+        SpriteNodeMaterial,
+        PhongNodeMaterial,
+        StandardNodeMaterial,
+        MeshStandardNodeMaterial,
+        NodePostProcessing
+    };
+});
+define('skylark-threejs-ex/loaders/NodeMaterialLoader',[
+    "skylark-threejs",
+    "../threex",
+    '../nodes/Nodes'
+], function (
+    THREE,
+    threex,
+    Nodes
+) {
+    'use strict';
+    var NodeMaterialLoader = function (manager, library) {
+        this.manager = manager !== undefined ? manager : THREE.DefaultLoadingManager;
+        this.nodes = {};
+        this.materials = {};
+        this.passes = {};
+        this.names = {};
+        this.library = library || {};
+    };
+    var NodeMaterialLoaderUtils = {
+        replaceUUIDObject: function (object, uuid, value, recursive) {
+            recursive = recursive !== undefined ? recursive : true;
+            if (typeof uuid === 'object')
+                uuid = uuid.uuid;
+            if (typeof object === 'object') {
+                var keys = Object.keys(object);
+                for (var i = 0; i < keys.length; i++) {
+                    var key = keys[i];
+                    if (recursive) {
+                        object[key] = this.replaceUUIDObject(object[key], uuid, value);
+                    }
+                    if (key === uuid) {
+                        object[uuid] = object[key];
+                        delete object[key];
+                    }
+                }
+            }
+            return object === uuid ? value : object;
+        },
+        replaceUUID: function (json, uuid, value) {
+            this.replaceUUIDObject(json, uuid, value, false);
+            this.replaceUUIDObject(json.nodes, uuid, value);
+            this.replaceUUIDObject(json.materials, uuid, value);
+            this.replaceUUIDObject(json.passes, uuid, value);
+            this.replaceUUIDObject(json.library, uuid, value, false);
+            return json;
+        }
+    };
+    Object.assign(NodeMaterialLoader.prototype, {
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(scope.manager);
+            loader.setPath(scope.path);
+            loader.load(url, function (text) {
+                onLoad(scope.parse(JSON.parse(text)));
+            }, onProgress, onError);
+            return this;
+        },
+        setPath: function (value) {
+            this.path = value;
+            return this;
+        },
+        getObjectByName: function (uuid) {
+            return this.names[uuid];
+        },
+        getObjectById: function (uuid) {
+            return this.library[uuid] || this.nodes[uuid] || this.materials[uuid] || this.passes[uuid] || this.names[uuid];
+        },
+        getNode: function (uuid) {
+            var object = this.getObjectById(uuid);
+            if (!object) {
+                console.warn('Node "' + uuid + '" not found.');
+            }
+            return object;
+        },
+        resolve: function (json) {
+            switch (typeof json) {
+            case 'boolean':
+            case 'number':
+                return json;
+            case 'string':
+                if (/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/i.test(json) || this.library[json]) {
+                    return this.getNode(json);
+                }
+                return json;
+            default:
+                if (Array.isArray(json)) {
+                    for (var i = 0; i < json.length; i++) {
+                        json[i] = this.resolve(json[i]);
+                    }
+                } else {
+                    for (var prop in json) {
+                        if (prop === 'uuid')
+                            continue;
+                        json[prop] = this.resolve(json[prop]);
+                    }
+                }
+            }
+            return json;
+        },
+        declare: function (json) {
+            var uuid, node, object;
+            for (uuid in json.nodes) {
+                node = json.nodes[uuid];
+                object = new Nodes[node.nodeType + 'Node']();
+                if (node.name) {
+                    object.name = node.name;
+                    this.names[object.name] = object;
+                }
+                this.nodes[uuid] = object;
+            }
+            for (uuid in json.materials) {
+                node = json.materials[uuid];
+                object = new Nodes[node.type]();
+                if (node.name) {
+                    object.name = node.name;
+                    this.names[object.name] = object;
+                }
+                this.materials[uuid] = object;
+            }
+            for (uuid in json.passes) {
+                node = json.passes[uuid];
+                object = new Nodes[node.type]();
+                if (node.name) {
+                    object.name = node.name;
+                    this.names[object.name] = object;
+                }
+                this.passes[uuid] = object;
+            }
+            if (json.material)
+                this.material = this.materials[json.material];
+            if (json.pass)
+                this.pass = this.passes[json.pass];
+            return json;
+        },
+        parse: function (json) {
+            var uuid;
+            json = this.resolve(this.declare(json));
+            for (uuid in json.nodes) {
+                this.nodes[uuid].copy(json.nodes[uuid]);
+            }
+            for (uuid in json.materials) {
+                this.materials[uuid].copy(json.materials[uuid]);
+            }
+            for (uuid in json.passes) {
+                this.passes[uuid].copy(json.passes[uuid]);
+            }
+            return this.material || this.pass || this;
+        }
+    });
+
+    return  threex.loaders.NodeMaterialLoader = NodeMaterialLoader;
+});
+define('skylark-threejs-ex/misc/VolumeSlice',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var VolumeSlice = function (volume, index, axis) {
+        var slice = this;
+        this.volume = volume;
+        index = index || 0;
+        Object.defineProperty(this, 'index', {
+            get: function () {
+                return index;
+            },
+            set: function (value) {
+                index = value;
+                slice.geometryNeedsUpdate = true;
+                return index;
+            }
+        });
+        this.axis = axis || 'z';
+        this.canvas = document.createElement('canvas');
+        this.canvasBuffer = document.createElement('canvas');
+        this.updateGeometry();
+        var canvasMap = new THREE.Texture(this.canvas);
+        canvasMap.minFilter = THREE.LinearFilter;
+        canvasMap.wrapS = canvasMap.wrapT = THREE.ClampToEdgeWrapping;
+        var material = new THREE.MeshBasicMaterial({
+            map: canvasMap,
+            side: THREE.DoubleSide,
+            transparent: true
+        });
+        this.mesh = new THREE.Mesh(this.geometry, material);
+        this.mesh.matrixAutoUpdate = false;
+        this.geometryNeedsUpdate = true;
+        this.repaint();
+    };
+    VolumeSlice.prototype = {
+        constructor: VolumeSlice,
+        repaint: function () {
+            if (this.geometryNeedsUpdate) {
+                this.updateGeometry();
+            }
+            var iLength = this.iLength, jLength = this.jLength, sliceAccess = this.sliceAccess, volume = this.volume, canvas = this.canvasBuffer, ctx = this.ctxBuffer;
+            var imgData = ctx.getImageData(0, 0, iLength, jLength);
+            var data = imgData.data;
+            var volumeData = volume.data;
+            var upperThreshold = volume.upperThreshold;
+            var lowerThreshold = volume.lowerThreshold;
+            var windowLow = volume.windowLow;
+            var windowHigh = volume.windowHigh;
+            var pixelCount = 0;
+            if (volume.dataType === 'label') {
+                for (var j = 0; j < jLength; j++) {
+                    for (var i = 0; i < iLength; i++) {
+                        var label = volumeData[sliceAccess(i, j)];
+                        label = label >= this.colorMap.length ? label % this.colorMap.length + 1 : label;
+                        var color = this.colorMap[label];
+                        data[4 * pixelCount] = color >> 24 & 255;
+                        data[4 * pixelCount + 1] = color >> 16 & 255;
+                        data[4 * pixelCount + 2] = color >> 8 & 255;
+                        data[4 * pixelCount + 3] = color & 255;
+                        pixelCount++;
+                    }
+                }
+            } else {
+                for (var j = 0; j < jLength; j++) {
+                    for (var i = 0; i < iLength; i++) {
+                        var value = volumeData[sliceAccess(i, j)];
+                        var alpha = 255;
+                        alpha = upperThreshold >= value ? lowerThreshold <= value ? alpha : 0 : 0;
+                        value = Math.floor(255 * (value - windowLow) / (windowHigh - windowLow));
+                        value = value > 255 ? 255 : value < 0 ? 0 : value | 0;
+                        data[4 * pixelCount] = value;
+                        data[4 * pixelCount + 1] = value;
+                        data[4 * pixelCount + 2] = value;
+                        data[4 * pixelCount + 3] = alpha;
+                        pixelCount++;
+                    }
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+            this.ctx.drawImage(canvas, 0, 0, iLength, jLength, 0, 0, this.canvas.width, this.canvas.height);
+            this.mesh.material.map.needsUpdate = true;
+        },
+        updateGeometry: function () {
+            var extracted = this.volume.extractPerpendicularPlane(this.axis, this.index);
+            this.sliceAccess = extracted.sliceAccess;
+            this.jLength = extracted.jLength;
+            this.iLength = extracted.iLength;
+            this.matrix = extracted.matrix;
+            this.canvas.width = extracted.planeWidth;
+            this.canvas.height = extracted.planeHeight;
+            this.canvasBuffer.width = this.iLength;
+            this.canvasBuffer.height = this.jLength;
+            this.ctx = this.canvas.getContext('2d');
+            this.ctxBuffer = this.canvasBuffer.getContext('2d');
+            if (this.geometry)
+                this.geometry.dispose();
+            this.geometry = new THREE.PlaneBufferGeometry(extracted.planeWidth, extracted.planeHeight);
+            if (this.mesh) {
+                this.mesh.geometry = this.geometry;
+                this.mesh.matrix.identity();
+                this.mesh.applyMatrix4(this.matrix);
+            }
+            this.geometryNeedsUpdate = false;
+        }
+    };
+    return threex.misc.VolumeSlice = VolumeSlice;
+});
+define('skylark-threejs-ex/misc/Volume',[
+    "skylark-threejs",
+    "../threex",
+    '../misc/VolumeSlice'
+], function (
+    THREE, 
+    threex,
+    VolumeSlice
+) {
+    'use strict';
+    var Volume = function (xLength, yLength, zLength, type, arrayBuffer) {
+        if (arguments.length > 0) {
+            this.xLength = Number(xLength) || 1;
+            this.yLength = Number(yLength) || 1;
+            this.zLength = Number(zLength) || 1;
+            switch (type) {
+            case 'Uint8':
+            case 'uint8':
+            case 'uchar':
+            case 'unsigned char':
+            case 'uint8_t':
+                this.data = new Uint8Array(arrayBuffer);
+                break;
+            case 'Int8':
+            case 'int8':
+            case 'signed char':
+            case 'int8_t':
+                this.data = new Int8Array(arrayBuffer);
+                break;
+            case 'Int16':
+            case 'int16':
+            case 'short':
+            case 'short int':
+            case 'signed short':
+            case 'signed short int':
+            case 'int16_t':
+                this.data = new Int16Array(arrayBuffer);
+                break;
+            case 'Uint16':
+            case 'uint16':
+            case 'ushort':
+            case 'unsigned short':
+            case 'unsigned short int':
+            case 'uint16_t':
+                this.data = new Uint16Array(arrayBuffer);
+                break;
+            case 'Int32':
+            case 'int32':
+            case 'int':
+            case 'signed int':
+            case 'int32_t':
+                this.data = new Int32Array(arrayBuffer);
+                break;
+            case 'Uint32':
+            case 'uint32':
+            case 'uint':
+            case 'unsigned int':
+            case 'uint32_t':
+                this.data = new Uint32Array(arrayBuffer);
+                break;
+            case 'longlong':
+            case 'long long':
+            case 'long long int':
+            case 'signed long long':
+            case 'signed long long int':
+            case 'int64':
+            case 'int64_t':
+            case 'ulonglong':
+            case 'unsigned long long':
+            case 'unsigned long long int':
+            case 'uint64':
+            case 'uint64_t':
+                throw 'Error in Volume constructor : this type is not supported in JavaScript';
+                break;
+            case 'Float32':
+            case 'float32':
+            case 'float':
+                this.data = new Float32Array(arrayBuffer);
+                break;
+            case 'Float64':
+            case 'float64':
+            case 'double':
+                this.data = new Float64Array(arrayBuffer);
+                break;
+            default:
+                this.data = new Uint8Array(arrayBuffer);
+            }
+            if (this.data.length !== this.xLength * this.yLength * this.zLength) {
+                throw 'Error in Volume constructor, lengths are not matching arrayBuffer size';
+            }
+        }
+        this.spacing = [
+            1,
+            1,
+            1
+        ];
+        this.offset = [
+            0,
+            0,
+            0
+        ];
+        this.matrix = new THREE.Matrix3();
+        this.matrix.identity();
+        var lowerThreshold = -Infinity;
+        Object.defineProperty(this, 'lowerThreshold', {
+            get: function () {
+                return lowerThreshold;
+            },
+            set: function (value) {
+                lowerThreshold = value;
+                this.sliceList.forEach(function (slice) {
+                    slice.geometryNeedsUpdate = true;
+                });
+            }
+        });
+        var upperThreshold = Infinity;
+        Object.defineProperty(this, 'upperThreshold', {
+            get: function () {
+                return upperThreshold;
+            },
+            set: function (value) {
+                upperThreshold = value;
+                this.sliceList.forEach(function (slice) {
+                    slice.geometryNeedsUpdate = true;
+                });
+            }
+        });
+        this.sliceList = [];
+    };
+    Volume.prototype = {
+        constructor: Volume,
+        getData: function (i, j, k) {
+            return this.data[k * this.xLength * this.yLength + j * this.xLength + i];
+        },
+        access: function (i, j, k) {
+            return k * this.xLength * this.yLength + j * this.xLength + i;
+        },
+        reverseAccess: function (index) {
+            var z = Math.floor(index / (this.yLength * this.xLength));
+            var y = Math.floor((index - z * this.yLength * this.xLength) / this.xLength);
+            var x = index - z * this.yLength * this.xLength - y * this.xLength;
+            return [
+                x,
+                y,
+                z
+            ];
+        },
+        map: function (functionToMap, context) {
+            var length = this.data.length;
+            context = context || this;
+            for (var i = 0; i < length; i++) {
+                this.data[i] = functionToMap.call(context, this.data[i], i, this.data);
+            }
+            return this;
+        },
+        extractPerpendicularPlane: function (axis, RASIndex) {
+            var iLength, jLength, sliceAccess, planeMatrix = new THREE.Matrix4().identity(), volume = this, planeWidth, planeHeight, firstSpacing, secondSpacing, positionOffset, IJKIndex;
+            var axisInIJK = new THREE.Vector3(), firstDirection = new THREE.Vector3(), secondDirection = new THREE.Vector3();
+            var dimensions = new THREE.Vector3(this.xLength, this.yLength, this.zLength);
+            switch (axis) {
+            case 'x':
+                axisInIJK.set(1, 0, 0);
+                firstDirection.set(0, 0, -1);
+                secondDirection.set(0, -1, 0);
+                firstSpacing = this.spacing[2];
+                secondSpacing = this.spacing[1];
+                IJKIndex = new THREE.Vector3(RASIndex, 0, 0);
+                planeMatrix.multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2));
+                positionOffset = (volume.RASDimensions[0] - 1) / 2;
+                planeMatrix.setPosition(new THREE.Vector3(RASIndex - positionOffset, 0, 0));
+                break;
+            case 'y':
+                axisInIJK.set(0, 1, 0);
+                firstDirection.set(1, 0, 0);
+                secondDirection.set(0, 0, 1);
+                firstSpacing = this.spacing[0];
+                secondSpacing = this.spacing[2];
+                IJKIndex = new THREE.Vector3(0, RASIndex, 0);
+                planeMatrix.multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+                positionOffset = (volume.RASDimensions[1] - 1) / 2;
+                planeMatrix.setPosition(new THREE.Vector3(0, RASIndex - positionOffset, 0));
+                break;
+            case 'z':
+            default:
+                axisInIJK.set(0, 0, 1);
+                firstDirection.set(1, 0, 0);
+                secondDirection.set(0, -1, 0);
+                firstSpacing = this.spacing[0];
+                secondSpacing = this.spacing[1];
+                IJKIndex = new THREE.Vector3(0, 0, RASIndex);
+                positionOffset = (volume.RASDimensions[2] - 1) / 2;
+                planeMatrix.setPosition(new THREE.Vector3(0, 0, RASIndex - positionOffset));
+                break;
+            }
+            firstDirection.applyMatrix4(volume.inverseMatrix).normalize();
+            firstDirection.argVar = 'i';
+            secondDirection.applyMatrix4(volume.inverseMatrix).normalize();
+            secondDirection.argVar = 'j';
+            axisInIJK.applyMatrix4(volume.inverseMatrix).normalize();
+            iLength = Math.floor(Math.abs(firstDirection.dot(dimensions)));
+            jLength = Math.floor(Math.abs(secondDirection.dot(dimensions)));
+            planeWidth = Math.abs(iLength * firstSpacing);
+            planeHeight = Math.abs(jLength * secondSpacing);
+            IJKIndex = Math.abs(Math.round(IJKIndex.applyMatrix4(volume.inverseMatrix).dot(axisInIJK)));
+            var base = [
+                new THREE.Vector3(1, 0, 0),
+                new THREE.Vector3(0, 1, 0),
+                new THREE.Vector3(0, 0, 1)
+            ];
+            var iDirection = [
+                firstDirection,
+                secondDirection,
+                axisInIJK
+            ].find(function (x) {
+                return Math.abs(x.dot(base[0])) > 0.9;
+            });
+            var jDirection = [
+                firstDirection,
+                secondDirection,
+                axisInIJK
+            ].find(function (x) {
+                return Math.abs(x.dot(base[1])) > 0.9;
+            });
+            var kDirection = [
+                firstDirection,
+                secondDirection,
+                axisInIJK
+            ].find(function (x) {
+                return Math.abs(x.dot(base[2])) > 0.9;
+            });
+            var argumentsWithInversion = [
+                'volume.xLength-1-',
+                'volume.yLength-1-',
+                'volume.zLength-1-'
+            ];
+            var argArray = [
+                iDirection,
+                jDirection,
+                kDirection
+            ].map(function (direction, n) {
+                return (direction.dot(base[n]) > 0 ? '' : argumentsWithInversion[n]) + (direction === axisInIJK ? 'IJKIndex' : direction.argVar);
+            });
+            var argString = argArray.join(',');
+            sliceAccess = eval('(function sliceAccess (i,j) {return volume.access( ' + argString + ');})');
+            return {
+                iLength: iLength,
+                jLength: jLength,
+                sliceAccess: sliceAccess,
+                matrix: planeMatrix,
+                planeWidth: planeWidth,
+                planeHeight: planeHeight
+            };
+        },
+        extractSlice: function (axis, index) {
+            var slice = new VolumeSlice(this, index, axis);
+            this.sliceList.push(slice);
+            return slice;
+        },
+        repaintAllSlices: function () {
+            this.sliceList.forEach(function (slice) {
+                slice.repaint();
+            });
+            return this;
+        },
+        computeMinMax: function () {
+            var min = Infinity;
+            var max = -Infinity;
+            var datasize = this.data.length;
+            var i = 0;
+            for (i = 0; i < datasize; i++) {
+                if (!isNaN(this.data[i])) {
+                    var value = this.data[i];
+                    min = Math.min(min, value);
+                    max = Math.max(max, value);
+                }
+            }
+            this.min = min;
+            this.max = max;
+            return [
+                min,
+                max
+            ];
+        }
+    };
+    return threex.misc.Volume = Volume;
+});
+define('skylark-threejs-ex/loaders/NRRDLoader',[
+    "skylark-threejs",
+    "../threex",
+    'skylark-zlib/Gunzip',
+    '../misc/Volume'
+], function (
+    THREE, 
+    threex,
+    Gunzip, 
+    Volume
+) {
+    'use strict';
+    var NRRDLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+    };
+    NRRDLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: NRRDLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(scope.manager);
+            loader.setPath(scope.path);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, function (data) {
+                onLoad(scope.parse(data));
+            }, onProgress, onError);
+        },
+        parse: function (data) {
+            var _data = data;
+            var _dataPointer = 0;
+            var _nativeLittleEndian = new Int8Array(new Int16Array([1]).buffer)[0] > 0;
+            var _littleEndian = true;
+            var headerObject = {};
+            function scan(type, chunks) {
+                if (chunks === undefined || chunks === null) {
+                    chunks = 1;
+                }
+                var _chunkSize = 1;
+                var _array_type = Uint8Array;
+                switch (type) {
+                case 'uchar':
+                    break;
+                case 'schar':
+                    _array_type = Int8Array;
+                    break;
+                case 'ushort':
+                    _array_type = Uint16Array;
+                    _chunkSize = 2;
+                    break;
+                case 'sshort':
+                    _array_type = Int16Array;
+                    _chunkSize = 2;
+                    break;
+                case 'uint':
+                    _array_type = Uint32Array;
+                    _chunkSize = 4;
+                    break;
+                case 'sint':
+                    _array_type = Int32Array;
+                    _chunkSize = 4;
+                    break;
+                case 'float':
+                    _array_type = Float32Array;
+                    _chunkSize = 4;
+                    break;
+                case 'complex':
+                    _array_type = Float64Array;
+                    _chunkSize = 8;
+                    break;
+                case 'double':
+                    _array_type = Float64Array;
+                    _chunkSize = 8;
+                    break;
+                }
+                var _bytes = new _array_type(_data.slice(_dataPointer, _dataPointer += chunks * _chunkSize));
+                if (_nativeLittleEndian != _littleEndian) {
+                    _bytes = flipEndianness(_bytes, _chunkSize);
+                }
+                if (chunks == 1) {
+                    return _bytes[0];
+                }
+                return _bytes;
+            }
+            function flipEndianness(array, chunkSize) {
+                var u8 = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+                for (var i = 0; i < array.byteLength; i += chunkSize) {
+                    for (var j = i + chunkSize - 1, k = i; j > k; j--, k++) {
+                        var tmp = u8[k];
+                        u8[k] = u8[j];
+                        u8[j] = tmp;
+                    }
+                }
+                return array;
+            }
+            function parseHeader(header) {
+                var data, field, fn, i, l, lines, m, _i, _len;
+                lines = header.split(/\r?\n/);
+                for (_i = 0, _len = lines.length; _i < _len; _i++) {
+                    l = lines[_i];
+                    if (l.match(/NRRD\d+/)) {
+                        headerObject.isNrrd = true;
+                    } else if (l.match(/^#/)) {
+                    } else if (m = l.match(/(.*):(.*)/)) {
+                        field = m[1].trim();
+                        data = m[2].trim();
+                        fn = NRRDLoader.prototype.fieldFunctions[field];
+                        if (fn) {
+                            fn.call(headerObject, data);
+                        } else {
+                            headerObject[field] = data;
+                        }
+                    }
+                }
+                if (!headerObject.isNrrd) {
+                    throw new Error('Not an NRRD file');
+                }
+                if (headerObject.encoding === 'bz2' || headerObject.encoding === 'bzip2') {
+                    throw new Error('Bzip is not supported');
+                }
+                if (!headerObject.vectors) {
+                    headerObject.vectors = [
+                        new THREE.Vector3(1, 0, 0),
+                        new THREE.Vector3(0, 1, 0),
+                        new THREE.Vector3(0, 0, 1)
+                    ];
+                    if (headerObject.spacings) {
+                        for (i = 0; i <= 2; i++) {
+                            if (!isNaN(headerObject.spacings[i])) {
+                                headerObject.vectors[i].multiplyScalar(headerObject.spacings[i]);
+                            }
+                        }
+                    }
+                }
+            }
+            function parseDataAsText(data, start, end) {
+                var number = '';
+                start = start || 0;
+                end = end || data.length;
+                var value;
+                var lengthOfTheResult = headerObject.sizes.reduce(function (previous, current) {
+                    return previous * current;
+                }, 1);
+                var base = 10;
+                if (headerObject.encoding === 'hex') {
+                    base = 16;
+                }
+                var result = new headerObject.__array(lengthOfTheResult);
+                var resultIndex = 0;
+                var parsingFunction = parseInt;
+                if (headerObject.__array === Float32Array || headerObject.__array === Float64Array) {
+                    parsingFunction = parseFloat;
+                }
+                for (var i = start; i < end; i++) {
+                    value = data[i];
+                    if ((value < 9 || value > 13) && value !== 32) {
+                        number += String.fromCharCode(value);
+                    } else {
+                        if (number !== '') {
+                            result[resultIndex] = parsingFunction(number, base);
+                            resultIndex++;
+                        }
+                        number = '';
+                    }
+                }
+                if (number !== '') {
+                    result[resultIndex] = parsingFunction(number, base);
+                    resultIndex++;
+                }
+                return result;
+            }
+            var _bytes = scan('uchar', data.byteLength);
+            var _length = _bytes.length;
+            var _header = null;
+            var _data_start = 0;
+            var i;
+            for (i = 1; i < _length; i++) {
+                if (_bytes[i - 1] == 10 && _bytes[i] == 10) {
+                    _header = this.parseChars(_bytes, 0, i - 2);
+                    _data_start = i + 1;
+                    break;
+                }
+            }
+            parseHeader(_header);
+            var _data = _bytes.subarray(_data_start);
+            if (headerObject.encoding === 'gzip' || headerObject.encoding === 'gz') {
+                var inflate = new Gunzip(new Uint8Array(_data));
+                _data = inflate.decompress();
+            } else if (headerObject.encoding === 'ascii' || headerObject.encoding === 'text' || headerObject.encoding === 'txt' || headerObject.encoding === 'hex') {
+                _data = parseDataAsText(_data);
+            } else if (headerObject.encoding === 'raw') {
+                var _copy = new Uint8Array(_data.length);
+                for (var i = 0; i < _data.length; i++) {
+                    _copy[i] = _data[i];
+                }
+                _data = _copy;
+            }
+            _data = _data.buffer;
+            var volume = new Volume();
+            volume.header = headerObject;
+            volume.data = new headerObject.__array(_data);
+            var min_max = volume.computeMinMax();
+            var min = min_max[0];
+            var max = min_max[1];
+            volume.windowLow = min;
+            volume.windowHigh = max;
+            volume.dimensions = [
+                headerObject.sizes[0],
+                headerObject.sizes[1],
+                headerObject.sizes[2]
+            ];
+            volume.xLength = volume.dimensions[0];
+            volume.yLength = volume.dimensions[1];
+            volume.zLength = volume.dimensions[2];
+            var spacingX = new THREE.Vector3(headerObject.vectors[0][0], headerObject.vectors[0][1], headerObject.vectors[0][2]).length();
+            var spacingY = new THREE.Vector3(headerObject.vectors[1][0], headerObject.vectors[1][1], headerObject.vectors[1][2]).length();
+            var spacingZ = new THREE.Vector3(headerObject.vectors[2][0], headerObject.vectors[2][1], headerObject.vectors[2][2]).length();
+            volume.spacing = [
+                spacingX,
+                spacingY,
+                spacingZ
+            ];
+            volume.matrix = new THREE.Matrix4();
+            var _spaceX = 1;
+            var _spaceY = 1;
+            var _spaceZ = 1;
+            if (headerObject.space == 'left-posterior-superior') {
+                _spaceX = -1;
+                _spaceY = -1;
+            } else if (headerObject.space === 'left-anterior-superior') {
+                _spaceX = -1;
+            }
+            if (!headerObject.vectors) {
+                volume.matrix.set(_spaceX, 0, 0, 0, 0, _spaceY, 0, 0, 0, 0, _spaceZ, 0, 0, 0, 0, 1);
+            } else {
+                var v = headerObject.vectors;
+                volume.matrix.set(_spaceX * v[0][0], _spaceX * v[1][0], _spaceX * v[2][0], 0, _spaceY * v[0][1], _spaceY * v[1][1], _spaceY * v[2][1], 0, _spaceZ * v[0][2], _spaceZ * v[1][2], _spaceZ * v[2][2], 0, 0, 0, 0, 1);
+            }
+            volume.inverseMatrix = new THREE.Matrix4();
+            volume.inverseMatrix.getInverse(volume.matrix);
+            volume.RASDimensions = new THREE.Vector3(volume.xLength, volume.yLength, volume.zLength).applyMatrix4(volume.matrix).round().toArray().map(Math.abs);
+            if (volume.lowerThreshold === -Infinity) {
+                volume.lowerThreshold = min;
+            }
+            if (volume.upperThreshold === Infinity) {
+                volume.upperThreshold = max;
+            }
+            return volume;
+        },
+        parseChars: function (array, start, end) {
+            if (start === undefined) {
+                start = 0;
+            }
+            if (end === undefined) {
+                end = array.length;
+            }
+            var output = '';
+            var i = 0;
+            for (i = start; i < end; ++i) {
+                output += String.fromCharCode(array[i]);
+            }
+            return output;
+        },
+        fieldFunctions: {
+            type: function (data) {
+                switch (data) {
+                case 'uchar':
+                case 'unsigned char':
+                case 'uint8':
+                case 'uint8_t':
+                    this.__array = Uint8Array;
+                    break;
+                case 'signed char':
+                case 'int8':
+                case 'int8_t':
+                    this.__array = Int8Array;
+                    break;
+                case 'short':
+                case 'short int':
+                case 'signed short':
+                case 'signed short int':
+                case 'int16':
+                case 'int16_t':
+                    this.__array = Int16Array;
+                    break;
+                case 'ushort':
+                case 'unsigned short':
+                case 'unsigned short int':
+                case 'uint16':
+                case 'uint16_t':
+                    this.__array = Uint16Array;
+                    break;
+                case 'int':
+                case 'signed int':
+                case 'int32':
+                case 'int32_t':
+                    this.__array = Int32Array;
+                    break;
+                case 'uint':
+                case 'unsigned int':
+                case 'uint32':
+                case 'uint32_t':
+                    this.__array = Uint32Array;
+                    break;
+                case 'float':
+                    this.__array = Float32Array;
+                    break;
+                case 'double':
+                    this.__array = Float64Array;
+                    break;
+                default:
+                    throw new Error('Unsupported NRRD data type: ' + data);
+                }
+                return this.type = data;
+            },
+            endian: function (data) {
+                return this.endian = data;
+            },
+            encoding: function (data) {
+                return this.encoding = data;
+            },
+            dimension: function (data) {
+                return this.dim = parseInt(data, 10);
+            },
+            sizes: function (data) {
+                var i;
+                return this.sizes = function () {
+                    var _i, _len, _ref, _results;
+                    _ref = data.split(/\s+/);
+                    _results = [];
+                    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+                        i = _ref[_i];
+                        _results.push(parseInt(i, 10));
+                    }
+                    return _results;
+                }();
+            },
+            space: function (data) {
+                return this.space = data;
+            },
+            'space origin': function (data) {
+                return this.space_origin = data.split('(')[1].split(')')[0].split(',');
+            },
+            'space directions': function (data) {
+                var f, parts, v;
+                parts = data.match(/\(.*?\)/g);
+                return this.vectors = function () {
+                    var _i, _len, _results;
+                    _results = [];
+                    for (_i = 0, _len = parts.length; _i < _len; _i++) {
+                        v = parts[_i];
+                        _results.push(function () {
+                            var _j, _len2, _ref, _results2;
+                            _ref = v.slice(1, -1).split(/,/);
+                            _results2 = [];
+                            for (_j = 0, _len2 = _ref.length; _j < _len2; _j++) {
+                                f = _ref[_j];
+                                _results2.push(parseFloat(f));
+                            }
+                            return _results2;
+                        }());
+                    }
+                    return _results;
+                }();
+            },
+            spacings: function (data) {
+                var f, parts;
+                parts = data.split(/\s+/);
+                return this.spacings = function () {
+                    var _i, _len, _results = [];
+                    for (_i = 0, _len = parts.length; _i < _len; _i++) {
+                        f = parts[_i];
+                        _results.push(parseFloat(f));
+                    }
+                    return _results;
+                }();
+            }
+        }
+    });
+    return threex.loaders.NRRDLoader = NRRDLoader;
 });
 define('skylark-threejs-ex/loaders/OBJLoader',[
     "skylark-threejs",
@@ -73536,6 +87915,608 @@ define('skylark-threejs-ex/loaders/OBJLoader2',[
     });
     return threex.loaders.OBJLoader2 = OBJLoader2;
 });
+define('skylark-threejs-ex/loaders/obj2/worker/main/WorkerExecutionSupport',[],function () {
+    'use strict';
+    const CodeBuilderInstructions = function (supportsStandardWorker, supportsJsmWorker, preferJsmWorker) {
+        this.supportsStandardWorker = supportsStandardWorker;
+        this.supportsJsmWorker = supportsJsmWorker;
+        this.preferJsmWorker = preferJsmWorker;
+        this.startCode = '';
+        this.codeFragments = [];
+        this.importStatements = [];
+        this.jsmWorkerUrl = null;
+        this.defaultGeometryType = 0;
+    };
+    CodeBuilderInstructions.prototype = {
+        constructor: CodeBuilderInstructions,
+        isSupportsStandardWorker: function () {
+            return this.supportsStandardWorker;
+        },
+        isSupportsJsmWorker: function () {
+            return this.supportsJsmWorker;
+        },
+        isPreferJsmWorker: function () {
+            return this.preferJsmWorker;
+        },
+        setJsmWorkerUrl: function (jsmWorkerUrl) {
+            if (jsmWorkerUrl !== undefined && jsmWorkerUrl !== null) {
+                this.jsmWorkerUrl = jsmWorkerUrl;
+            }
+        },
+        addStartCode: function (startCode) {
+            this.startCode = startCode;
+        },
+        addCodeFragment: function (code) {
+            this.codeFragments.push(code);
+        },
+        addLibraryImport: function (libraryPath) {
+            let libraryUrl = new URL(libraryPath, window.location.href).href;
+            let code = 'importScripts( "' + libraryUrl + '" );';
+            this.importStatements.push(code);
+        },
+        getImportStatements: function () {
+            return this.importStatements;
+        },
+        getCodeFragments: function () {
+            return this.codeFragments;
+        },
+        getStartCode: function () {
+            return this.startCode;
+        }
+    };
+    const WorkerExecutionSupport = function () {
+        if (window.Worker === undefined)
+            throw 'This browser does not support web workers!';
+        if (window.Blob === undefined)
+            throw 'This browser does not support Blob!';
+        if (typeof window.URL.createObjectURL !== 'function')
+            throw 'This browser does not support Object creation from URL!';
+        this._reset();
+    };
+    WorkerExecutionSupport.WORKER_SUPPORT_VERSION = '3.2.0';
+    console.info('Using WorkerSupport version: ' + WorkerExecutionSupport.WORKER_SUPPORT_VERSION);
+    WorkerExecutionSupport.prototype = {
+        constructor: WorkerExecutionSupport,
+        _reset: function () {
+            this.logging = {
+                enabled: false,
+                debug: false
+            };
+            let scope = this;
+            let scopeTerminate = function () {
+                scope._terminate();
+            };
+            this.worker = {
+                native: null,
+                jsmWorker: false,
+                logging: true,
+                workerRunner: {
+                    name: 'WorkerRunner',
+                    usesMeshDisassembler: false,
+                    defaultGeometryType: 0
+                },
+                terminateWorkerOnLoad: true,
+                forceWorkerDataCopy: false,
+                started: false,
+                queuedMessage: null,
+                callbacks: {
+                    onAssetAvailable: null,
+                    onLoad: null,
+                    terminate: scopeTerminate
+                }
+            };
+        },
+        setLogging: function (enabled, debug) {
+            this.logging.enabled = enabled === true;
+            this.logging.debug = debug === true;
+            this.worker.logging = enabled === true;
+            return this;
+        },
+        setForceWorkerDataCopy: function (forceWorkerDataCopy) {
+            this.worker.forceWorkerDataCopy = forceWorkerDataCopy === true;
+            return this;
+        },
+        setTerminateWorkerOnLoad: function (terminateWorkerOnLoad) {
+            this.worker.terminateWorkerOnLoad = terminateWorkerOnLoad === true;
+            if (this.worker.terminateWorkerOnLoad && this.isWorkerLoaded(this.worker.jsmWorker) && this.worker.queuedMessage === null && this.worker.started) {
+                if (this.logging.enabled) {
+                    console.info('Worker is terminated immediately as it is not running!');
+                }
+                this._terminate();
+            }
+            return this;
+        },
+        updateCallbacks: function (onAssetAvailable, onLoad) {
+            if (onAssetAvailable !== undefined && onAssetAvailable !== null) {
+                this.worker.callbacks.onAssetAvailable = onAssetAvailable;
+            }
+            if (onLoad !== undefined && onLoad !== null) {
+                this.worker.callbacks.onLoad = onLoad;
+            }
+            this._verifyCallbacks();
+        },
+        _verifyCallbacks: function () {
+            if (this.worker.callbacks.onAssetAvailable === undefined || this.worker.callbacks.onAssetAvailable === null) {
+                throw 'Unable to run as no "onAssetAvailable" callback is set.';
+            }
+        },
+        buildWorker: function (codeBuilderInstructions) {
+            let jsmSuccess = false;
+            if (codeBuilderInstructions.isSupportsJsmWorker() && codeBuilderInstructions.isPreferJsmWorker()) {
+                jsmSuccess = this._buildWorkerJsm(codeBuilderInstructions);
+            }
+            if (!jsmSuccess && codeBuilderInstructions.isSupportsStandardWorker()) {
+                this._buildWorkerStandard(codeBuilderInstructions);
+            }
+        },
+        _buildWorkerJsm: function (codeBuilderInstructions) {
+            let jsmSuccess = true;
+            let timeLabel = 'buildWorkerJsm';
+            let workerAvailable = this._buildWorkerCheckPreconditions(true, timeLabel);
+            if (!workerAvailable) {
+                try {
+                    let worker = new Worker(codeBuilderInstructions.jsmWorkerUrl.href, { type: 'module' });
+                    this._configureWorkerCommunication(worker, true, codeBuilderInstructions.defaultGeometryType, timeLabel);
+                } catch (e) {
+                    jsmSuccess = false;
+                    if (e instanceof TypeError || e instanceof SyntaxError) {
+                        console.error('Modules are not supported in workers.');
+                    }
+                }
+            }
+            return jsmSuccess;
+        },
+        _buildWorkerStandard: function (codeBuilderInstructions) {
+            let timeLabel = 'buildWorkerStandard';
+            let workerAvailable = this._buildWorkerCheckPreconditions(false, timeLabel);
+            if (!workerAvailable) {
+                let concatenateCode = '';
+                codeBuilderInstructions.getImportStatements().forEach(function (element) {
+                    concatenateCode += element + '\n';
+                });
+                concatenateCode += '\n';
+                codeBuilderInstructions.getCodeFragments().forEach(function (element) {
+                    concatenateCode += element + '\n';
+                });
+                concatenateCode += '\n';
+                concatenateCode += codeBuilderInstructions.getStartCode();
+                let blob = new Blob([concatenateCode], { type: 'application/javascript' });
+                let worker = new Worker(window.URL.createObjectURL(blob));
+                this._configureWorkerCommunication(worker, false, codeBuilderInstructions.defaultGeometryType, timeLabel);
+            }
+        },
+        _buildWorkerCheckPreconditions: function (requireJsmWorker, timeLabel) {
+            let workerAvailable = false;
+            if (this.isWorkerLoaded(requireJsmWorker)) {
+                workerAvailable = true;
+            } else {
+                if (this.logging.enabled) {
+                    console.info('WorkerExecutionSupport: Building ' + (requireJsmWorker ? 'jsm' : 'standard') + ' worker code...');
+                    console.time(timeLabel);
+                }
+            }
+            return workerAvailable;
+        },
+        _configureWorkerCommunication: function (worker, haveJsmWorker, defaultGeometryType, timeLabel) {
+            this.worker.native = worker;
+            this.worker.jsmWorker = haveJsmWorker;
+            let scope = this;
+            let scopedReceiveWorkerMessage = function (event) {
+                scope._receiveWorkerMessage(event);
+            };
+            this.worker.native.onmessage = scopedReceiveWorkerMessage;
+            this.worker.native.onerror = scopedReceiveWorkerMessage;
+            if (defaultGeometryType !== undefined && defaultGeometryType !== null) {
+                this.worker.workerRunner.defaultGeometryType = defaultGeometryType;
+            }
+            if (this.logging.enabled) {
+                console.timeEnd(timeLabel);
+            }
+        },
+        isWorkerLoaded: function (requireJsmWorker) {
+            return this.worker.native !== null && (requireJsmWorker && this.worker.jsmWorker || !requireJsmWorker && !this.worker.jsmWorker);
+        },
+        _receiveWorkerMessage: function (event) {
+            if (event.type === 'error') {
+                console.error(event);
+                return;
+            }
+            let payload = event.data;
+            let workerRunnerName = this.worker.workerRunner.name;
+            switch (payload.cmd) {
+            case 'assetAvailable':
+                this.worker.callbacks.onAssetAvailable(payload);
+                break;
+            case 'completeOverall':
+                this.worker.queuedMessage = null;
+                this.worker.started = false;
+                if (this.worker.callbacks.onLoad !== null) {
+                    this.worker.callbacks.onLoad(payload.msg);
+                }
+                if (this.worker.terminateWorkerOnLoad) {
+                    if (this.worker.logging.enabled) {
+                        console.info('WorkerSupport [' + workerRunnerName + ']: Run is complete. Terminating application on request!');
+                    }
+                    this.worker.callbacks.terminate();
+                }
+                break;
+            case 'error':
+                console.error('WorkerSupport [' + workerRunnerName + ']: Reported error: ' + payload.msg);
+                this.worker.queuedMessage = null;
+                this.worker.started = false;
+                if (this.worker.callbacks.onLoad !== null) {
+                    this.worker.callbacks.onLoad(payload.msg);
+                }
+                if (this.worker.terminateWorkerOnLoad) {
+                    if (this.worker.logging.enabled) {
+                        console.info('WorkerSupport [' + workerRunnerName + ']: Run reported error. Terminating application on request!');
+                    }
+                    this.worker.callbacks.terminate();
+                }
+                break;
+            default:
+                console.error('WorkerSupport [' + workerRunnerName + ']: Received unknown command: ' + payload.cmd);
+                break;
+            }
+        },
+        executeParallel: function (payload, transferables) {
+            payload.cmd = 'parse';
+            payload.usesMeshDisassembler = this.worker.workerRunner.usesMeshDisassembler;
+            payload.defaultGeometryType = this.worker.workerRunner.defaultGeometryType;
+            if (!this._verifyWorkerIsAvailable(payload, transferables))
+                return;
+            this._postMessage();
+        },
+        _verifyWorkerIsAvailable: function (payload, transferables) {
+            this._verifyCallbacks();
+            let ready = true;
+            if (this.worker.queuedMessage !== null) {
+                console.warn('Already processing message. Rejecting new run instruction');
+                ready = false;
+            } else {
+                this.worker.queuedMessage = {
+                    payload: payload,
+                    transferables: transferables === undefined || transferables === null ? [] : transferables
+                };
+                this.worker.started = true;
+            }
+            return ready;
+        },
+        _postMessage: function () {
+            if (this.worker.queuedMessage !== null) {
+                if (this.worker.queuedMessage.payload.data.input instanceof ArrayBuffer) {
+                    let transferables = [];
+                    if (this.worker.forceWorkerDataCopy) {
+                        transferables.push(this.worker.queuedMessage.payload.data.input.slice(0));
+                    } else {
+                        transferables.push(this.worker.queuedMessage.payload.data.input);
+                    }
+                    if (this.worker.queuedMessage.transferables.length > 0) {
+                        transferables = transferables.concat(this.worker.queuedMessage.transferables);
+                    }
+                    this.worker.native.postMessage(this.worker.queuedMessage.payload, transferables);
+                } else {
+                    this.worker.native.postMessage(this.worker.queuedMessage.payload);
+                }
+            }
+        },
+        _terminate: function () {
+            this.worker.native.terminate();
+            this._reset();
+        }
+    };
+    return {
+        CodeBuilderInstructions,
+        WorkerExecutionSupport
+    };
+});
+define('skylark-threejs-ex/loaders/obj2/utils/CodeSerializer',[],function () {
+    'use strict';
+    const CodeSerializer = {
+        serializeClass: function (targetPrototype, targetPrototypeInstance, basePrototypeName, overrideFunctions) {
+            let objectPart, constructorString, i, funcInstructions, funcTemp;
+            let fullObjectName = targetPrototypeInstance.constructor.name;
+            let prototypeFunctions = [];
+            let objectProperties = [];
+            let objectFunctions = [];
+            let isExtended = basePrototypeName !== null && basePrototypeName !== undefined;
+            if (!Array.isArray(overrideFunctions))
+                overrideFunctions = [];
+            for (let name in targetPrototype.prototype) {
+                objectPart = targetPrototype.prototype[name];
+                funcInstructions = new CodeSerializationInstruction(name, fullObjectName + '.prototype.' + name);
+                funcInstructions.setCode(objectPart.toString());
+                if (name === 'constructor') {
+                    if (!funcInstructions.isRemoveCode()) {
+                        constructorString = fullObjectName + ' = ' + funcInstructions.getCode() + ';\n\n';
+                    }
+                } else if (typeof objectPart === 'function') {
+                    funcTemp = overrideFunctions[name];
+                    if (funcTemp instanceof CodeSerializationInstruction && funcTemp.getName() === funcInstructions.getName()) {
+                        funcInstructions = funcTemp;
+                    }
+                    if (!funcInstructions.isRemoveCode()) {
+                        if (isExtended) {
+                            prototypeFunctions.push(funcInstructions.getFullName() + ' = ' + funcInstructions.getCode() + ';\n\n');
+                        } else {
+                            prototypeFunctions.push('\t' + funcInstructions.getName() + ': ' + funcInstructions.getCode() + ',\n\n');
+                        }
+                    }
+                }
+            }
+            for (let name in targetPrototype) {
+                objectPart = targetPrototype[name];
+                funcInstructions = new CodeSerializationInstruction(name, fullObjectName + '.' + name);
+                if (typeof objectPart === 'function') {
+                    funcTemp = overrideFunctions[name];
+                    if (funcTemp instanceof CodeSerializationInstruction && funcTemp.getName() === funcInstructions.getName()) {
+                        funcInstructions = funcTemp;
+                    } else {
+                        funcInstructions.setCode(objectPart.toString());
+                    }
+                    if (!funcInstructions.isRemoveCode()) {
+                        objectFunctions.push(funcInstructions.getFullName() + ' = ' + funcInstructions.getCode() + ';\n\n');
+                    }
+                } else {
+                    if (typeof objectPart === 'string' || objectPart instanceof String) {
+                        funcInstructions.setCode('"' + objectPart.toString() + '"');
+                    } else if (typeof objectPart === 'object') {
+                        console.log('Omitting object "' + funcInstructions.getName() + '" and replace it with empty object.');
+                        funcInstructions.setCode('{}');
+                    } else {
+                        funcInstructions.setCode(objectPart);
+                    }
+                    if (!funcInstructions.isRemoveCode()) {
+                        objectProperties.push(funcInstructions.getFullName() + ' = ' + funcInstructions.getCode() + ';\n');
+                    }
+                }
+            }
+            let objectString = constructorString + '\n\n';
+            if (isExtended) {
+                objectString += fullObjectName + '.prototype = Object.create( ' + basePrototypeName + '.prototype );\n';
+            }
+            objectString += fullObjectName + '.prototype.constructor = ' + fullObjectName + ';\n';
+            objectString += '\n\n';
+            for (i = 0; i < objectProperties.length; i++) {
+                objectString += objectProperties[i];
+            }
+            objectString += '\n\n';
+            for (i = 0; i < objectFunctions.length; i++) {
+                objectString += objectFunctions[i];
+            }
+            objectString += '\n\n';
+            if (isExtended) {
+                for (i = 0; i < prototypeFunctions.length; i++) {
+                    objectString += prototypeFunctions[i];
+                }
+            } else {
+                objectString += fullObjectName + '.prototype = {\n\n';
+                for (i = 0; i < prototypeFunctions.length; i++) {
+                    objectString += prototypeFunctions[i];
+                }
+                objectString += '\n};';
+            }
+            objectString += '\n\n';
+            return objectString;
+        }
+    };
+
+    return  CodeSerializer;
+});
+define('skylark-threejs-ex/loaders/obj2/worker/parallel/WorkerRunner',[],function () {
+    'use strict';
+    const ObjectManipulator = function () {
+    };
+    ObjectManipulator.prototype = {
+        constructor: ObjectManipulator,
+        applyProperties: function (objToAlter, params, forceCreation) {
+            if (objToAlter === undefined || objToAlter === null || params === undefined || params === null)
+                return;
+            let property, funcName, values;
+            for (property in params) {
+                funcName = 'set' + property.substring(0, 1).toLocaleUpperCase() + property.substring(1);
+                values = params[property];
+                if (typeof objToAlter[funcName] === 'function') {
+                    objToAlter[funcName](values);
+                } else if (objToAlter.hasOwnProperty(property) || forceCreation) {
+                    objToAlter[property] = values;
+                }
+            }
+        }
+    };
+    const DefaultWorkerPayloadHandler = function (parser) {
+        this.parser = parser;
+        this.logging = {
+            enabled: false,
+            debug: false
+        };
+    };
+    DefaultWorkerPayloadHandler.prototype = {
+        constructor: DefaultWorkerPayloadHandler,
+        handlePayload: function (payload) {
+            if (payload.logging) {
+                this.logging.enabled = payload.logging.enabled === true;
+                this.logging.debug = payload.logging.debug === true;
+            }
+            if (payload.cmd === 'parse') {
+                let scope = this;
+                let callbacks = {
+                    callbackOnAssetAvailable: function (payload) {
+                        self.postMessage(payload);
+                    },
+                    callbackOnProgress: function (text) {
+                        if (scope.logging.enabled && scope.logging.debug)
+                            console.debug('WorkerRunner: progress: ' + text);
+                    }
+                };
+                let parser = this.parser;
+                if (typeof parser['setLogging'] === 'function') {
+                    parser.setLogging(this.logging.enabled, this.logging.debug);
+                }
+                let objectManipulator = new ObjectManipulator();
+                objectManipulator.applyProperties(parser, payload.params, false);
+                objectManipulator.applyProperties(parser, callbacks, false);
+                let arraybuffer = payload.data.input;
+                let executeFunctionName = 'execute';
+                if (typeof parser.getParseFunctionName === 'function')
+                    executeFunctionName = parser.getParseFunctionName();
+                if (payload.usesMeshDisassembler) {
+                } else {
+                    parser[executeFunctionName](arraybuffer, payload.data.options);
+                }
+                if (this.logging.enabled)
+                    console.log('WorkerRunner: Run complete!');
+                self.postMessage({
+                    cmd: 'completeOverall',
+                    msg: 'WorkerRunner completed run.'
+                });
+            } else {
+                console.error('WorkerRunner: Received unknown command: ' + payload.cmd);
+            }
+        }
+    };
+    const WorkerRunner = function (payloadHandler) {
+        this.payloadHandler = payloadHandler;
+        let scope = this;
+        let scopedRunner = function (event) {
+            scope.processMessage(event.data);
+        };
+        self.addEventListener('message', scopedRunner, false);
+    };
+    WorkerRunner.prototype = {
+        constructor: WorkerRunner,
+        processMessage: function (payload) {
+            this.payloadHandler.handlePayload(payload);
+        }
+    };
+    return {
+        WorkerRunner,
+        DefaultWorkerPayloadHandler,
+        ObjectManipulator
+    };
+});
+define('skylark-threejs-ex/loaders/OBJLoader2Parallel',[
+    "skylark-threejs",
+    "../threex",
+    './obj2/worker/main/WorkerExecutionSupport',
+    './obj2/utils/CodeSerializer',
+    './OBJLoader2',
+    './obj2/OBJLoader2Parser',
+    './obj2/worker/parallel/WorkerRunner'
+], function (
+    THREE, 
+    threex,
+    WorkerExecutionSupport, 
+    CodeSerializer, 
+    OBJLoader2, 
+    OBJLoader2Parser, 
+    WorkerRunner
+) {
+    'use strict';
+    const OBJLoader2Parallel = function (manager) {
+        OBJLoader2.call(this, manager);
+        this.preferJsmWorker = false;
+        this.jsmWorkerUrl = null;
+        this.executeParallel = true;
+        this.workerExecutionSupport = new WorkerExecutionSupport();
+    };
+    OBJLoader2Parallel.OBJLOADER2_PARALLEL_VERSION = '3.2.0';
+    console.info('Using OBJLoader2Parallel version: ' + OBJLoader2Parallel.OBJLOADER2_PARALLEL_VERSION);
+    OBJLoader2Parallel.DEFAULT_JSM_WORKER_PATH = './jsm/loaders/obj2/worker/parallel/OBJLoader2JsmWorker';
+    OBJLoader2Parallel.prototype = Object.assign(Object.create(OBJLoader2.prototype), {
+        constructor: OBJLoader2Parallel,
+        setExecuteParallel: function (executeParallel) {
+            this.executeParallel = executeParallel === true;
+            return this;
+        },
+        setJsmWorker: function (preferJsmWorker, jsmWorkerUrl) {
+            this.preferJsmWorker = preferJsmWorker === true;
+            if (jsmWorkerUrl === undefined || jsmWorkerUrl === null) {
+                throw 'The url to the jsm worker is not valid. Aborting...';
+            }
+            this.jsmWorkerUrl = jsmWorkerUrl;
+            return this;
+        },
+        getWorkerExecutionSupport: function () {
+            return this.workerExecutionSupport;
+        },
+        buildWorkerCode: function () {
+            let codeBuilderInstructions = new CodeBuilderInstructions(true, true, this.preferJsmWorker);
+            if (codeBuilderInstructions.isSupportsJsmWorker()) {
+                codeBuilderInstructions.setJsmWorkerUrl(this.jsmWorkerUrl);
+            }
+            if (codeBuilderInstructions.isSupportsStandardWorker()) {
+                let objectManipulator = new ObjectManipulator();
+                let defaultWorkerPayloadHandler = new DefaultWorkerPayloadHandler(this.parser);
+                let workerRunner = new WorkerRunner({});
+                codeBuilderInstructions.addCodeFragment(CodeSerializer.serializeClass(OBJLoader2Parser, this.parser));
+                codeBuilderInstructions.addCodeFragment(CodeSerializer.serializeClass(ObjectManipulator, objectManipulator));
+                codeBuilderInstructions.addCodeFragment(CodeSerializer.serializeClass(DefaultWorkerPayloadHandler, defaultWorkerPayloadHandler));
+                codeBuilderInstructions.addCodeFragment(CodeSerializer.serializeClass(WorkerRunner, workerRunner));
+                let startCode = 'new ' + workerRunner.constructor.name + '( new ' + defaultWorkerPayloadHandler.constructor.name + '( new ' + this.parser.constructor.name + '() ) );';
+                codeBuilderInstructions.addStartCode(startCode);
+            }
+            return codeBuilderInstructions;
+        },
+        load: function (content, onLoad, onFileLoadProgress, onError, onMeshAlter) {
+            let scope = this;
+            function interceptOnLoad(object3d, message) {
+                if (object3d.name === 'OBJLoader2ParallelDummy') {
+                    if (scope.parser.logging.enabled && scope.parser.logging.debug) {
+                        console.debug('Received dummy answer from OBJLoader2Parallel#parse');
+                    }
+                } else {
+                    onLoad(object3d, message);
+                }
+            }
+            OBJLoader2.prototype.load.call(this, content, interceptOnLoad, onFileLoadProgress, onError, onMeshAlter);
+        },
+        parse: function (content) {
+            if (this.executeParallel) {
+                if (this.parser.callbacks.onLoad === this.parser._onLoad) {
+                    throw 'No callback other than the default callback was provided! Aborting!';
+                }
+                if (!this.workerExecutionSupport.isWorkerLoaded(this.preferJsmWorker)) {
+                    this.workerExecutionSupport.buildWorker(this.buildWorkerCode());
+                    let scope = this;
+                    let scopedOnAssetAvailable = function (payload) {
+                        scope._onAssetAvailable(payload);
+                    };
+                    function scopedOnLoad(message) {
+                        scope.parser.callbacks.onLoad(scope.baseObject3d, message);
+                    }
+                    this.workerExecutionSupport.updateCallbacks(scopedOnAssetAvailable, scopedOnLoad);
+                }
+                this.materialHandler.createDefaultMaterials(false);
+                this.workerExecutionSupport.executeParallel({
+                    params: {
+                        modelName: this.modelName,
+                        instanceNo: this.instanceNo,
+                        useIndices: this.parser.useIndices,
+                        disregardNormals: this.parser.disregardNormals,
+                        materialPerSmoothingGroup: this.parser.materialPerSmoothingGroup,
+                        useOAsMesh: this.parser.useOAsMesh,
+                        materials: this.materialHandler.getMaterialsJSON()
+                    },
+                    data: {
+                        input: content,
+                        options: null
+                    },
+                    logging: {
+                        enabled: this.parser.logging.enabled,
+                        debug: this.parser.logging.debug
+                    }
+                });
+                let dummy = new THREE.Object3D();
+                dummy.name = 'OBJLoader2ParallelDummy';
+                return dummy;
+            } else {
+                return OBJLoader2.prototype.parse.call(this, content);
+            }
+        }
+    });
+    return threex.loaders.OBJLoader2Parallel = OBJLoader2Parallel;
+});
 define('skylark-threejs-ex/loaders/PCDLoader',[
     "skylark-threejs",
     "../threex"
@@ -73774,6 +88755,728 @@ define('skylark-threejs-ex/loaders/PCDLoader',[
     });
 
     return threex.loaders.PCDLoader = PCDLoader;
+});
+define('skylark-threejs-ex/loaders/PDBLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var PDBLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+    };
+    PDBLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: PDBLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(scope.manager);
+            loader.setPath(scope.path);
+            loader.load(url, function (text) {
+                onLoad(scope.parse(text));
+            }, onProgress, onError);
+        },
+        parse: function (text) {
+            function trim(text) {
+                return text.replace(/^\s\s*/, '').replace(/\s\s*$/, '');
+            }
+            function capitalize(text) {
+                return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
+            }
+            function hash(s, e) {
+                return 's' + Math.min(s, e) + 'e' + Math.max(s, e);
+            }
+            function parseBond(start, length) {
+                var eatom = parseInt(lines[i].substr(start, length));
+                if (eatom) {
+                    var h = hash(satom, eatom);
+                    if (bhash[h] === undefined) {
+                        bonds.push([
+                            satom - 1,
+                            eatom - 1,
+                            1
+                        ]);
+                        bhash[h] = bonds.length - 1;
+                    } else {
+                    }
+                }
+            }
+            function buildGeometry() {
+                var build = {
+                    geometryAtoms: new THREE.BufferGeometry(),
+                    geometryBonds: new THREE.BufferGeometry(),
+                    json: {
+                        atoms: atoms,
+                        bonds: bonds
+                    }
+                };
+                var geometryAtoms = build.geometryAtoms;
+                var geometryBonds = build.geometryBonds;
+                var i, l;
+                var verticesAtoms = [];
+                var colorsAtoms = [];
+                var verticesBonds = [];
+                for (i = 0, l = atoms.length; i < l; i++) {
+                    var atom = atoms[i];
+                    var x = atom[0];
+                    var y = atom[1];
+                    var z = atom[2];
+                    verticesAtoms.push(x, y, z);
+                    var r = atom[3][0] / 255;
+                    var g = atom[3][1] / 255;
+                    var b = atom[3][2] / 255;
+                    colorsAtoms.push(r, g, b);
+                }
+                for (i = 0, l = bonds.length; i < l; i++) {
+                    var bond = bonds[i];
+                    var start = bond[0];
+                    var end = bond[1];
+                    verticesBonds.push(verticesAtoms[start * 3 + 0]);
+                    verticesBonds.push(verticesAtoms[start * 3 + 1]);
+                    verticesBonds.push(verticesAtoms[start * 3 + 2]);
+                    verticesBonds.push(verticesAtoms[end * 3 + 0]);
+                    verticesBonds.push(verticesAtoms[end * 3 + 1]);
+                    verticesBonds.push(verticesAtoms[end * 3 + 2]);
+                }
+                geometryAtoms.setAttribute('position', new THREE.Float32BufferAttribute(verticesAtoms, 3));
+                geometryAtoms.setAttribute('color', new THREE.Float32BufferAttribute(colorsAtoms, 3));
+                geometryBonds.setAttribute('position', new THREE.Float32BufferAttribute(verticesBonds, 3));
+                return build;
+            }
+            var CPK = {
+                h: [
+                    255,
+                    255,
+                    255
+                ],
+                he: [
+                    217,
+                    255,
+                    255
+                ],
+                li: [
+                    204,
+                    128,
+                    255
+                ],
+                be: [
+                    194,
+                    255,
+                    0
+                ],
+                b: [
+                    255,
+                    181,
+                    181
+                ],
+                c: [
+                    144,
+                    144,
+                    144
+                ],
+                n: [
+                    48,
+                    80,
+                    248
+                ],
+                o: [
+                    255,
+                    13,
+                    13
+                ],
+                f: [
+                    144,
+                    224,
+                    80
+                ],
+                ne: [
+                    179,
+                    227,
+                    245
+                ],
+                na: [
+                    171,
+                    92,
+                    242
+                ],
+                mg: [
+                    138,
+                    255,
+                    0
+                ],
+                al: [
+                    191,
+                    166,
+                    166
+                ],
+                si: [
+                    240,
+                    200,
+                    160
+                ],
+                p: [
+                    255,
+                    128,
+                    0
+                ],
+                s: [
+                    255,
+                    255,
+                    48
+                ],
+                cl: [
+                    31,
+                    240,
+                    31
+                ],
+                ar: [
+                    128,
+                    209,
+                    227
+                ],
+                k: [
+                    143,
+                    64,
+                    212
+                ],
+                ca: [
+                    61,
+                    255,
+                    0
+                ],
+                sc: [
+                    230,
+                    230,
+                    230
+                ],
+                ti: [
+                    191,
+                    194,
+                    199
+                ],
+                v: [
+                    166,
+                    166,
+                    171
+                ],
+                cr: [
+                    138,
+                    153,
+                    199
+                ],
+                mn: [
+                    156,
+                    122,
+                    199
+                ],
+                fe: [
+                    224,
+                    102,
+                    51
+                ],
+                co: [
+                    240,
+                    144,
+                    160
+                ],
+                ni: [
+                    80,
+                    208,
+                    80
+                ],
+                cu: [
+                    200,
+                    128,
+                    51
+                ],
+                zn: [
+                    125,
+                    128,
+                    176
+                ],
+                ga: [
+                    194,
+                    143,
+                    143
+                ],
+                ge: [
+                    102,
+                    143,
+                    143
+                ],
+                as: [
+                    189,
+                    128,
+                    227
+                ],
+                se: [
+                    255,
+                    161,
+                    0
+                ],
+                br: [
+                    166,
+                    41,
+                    41
+                ],
+                kr: [
+                    92,
+                    184,
+                    209
+                ],
+                rb: [
+                    112,
+                    46,
+                    176
+                ],
+                sr: [
+                    0,
+                    255,
+                    0
+                ],
+                y: [
+                    148,
+                    255,
+                    255
+                ],
+                zr: [
+                    148,
+                    224,
+                    224
+                ],
+                nb: [
+                    115,
+                    194,
+                    201
+                ],
+                mo: [
+                    84,
+                    181,
+                    181
+                ],
+                tc: [
+                    59,
+                    158,
+                    158
+                ],
+                ru: [
+                    36,
+                    143,
+                    143
+                ],
+                rh: [
+                    10,
+                    125,
+                    140
+                ],
+                pd: [
+                    0,
+                    105,
+                    133
+                ],
+                ag: [
+                    192,
+                    192,
+                    192
+                ],
+                cd: [
+                    255,
+                    217,
+                    143
+                ],
+                in: [
+                    166,
+                    117,
+                    115
+                ],
+                sn: [
+                    102,
+                    128,
+                    128
+                ],
+                sb: [
+                    158,
+                    99,
+                    181
+                ],
+                te: [
+                    212,
+                    122,
+                    0
+                ],
+                i: [
+                    148,
+                    0,
+                    148
+                ],
+                xe: [
+                    66,
+                    158,
+                    176
+                ],
+                cs: [
+                    87,
+                    23,
+                    143
+                ],
+                ba: [
+                    0,
+                    201,
+                    0
+                ],
+                la: [
+                    112,
+                    212,
+                    255
+                ],
+                ce: [
+                    255,
+                    255,
+                    199
+                ],
+                pr: [
+                    217,
+                    255,
+                    199
+                ],
+                nd: [
+                    199,
+                    255,
+                    199
+                ],
+                pm: [
+                    163,
+                    255,
+                    199
+                ],
+                sm: [
+                    143,
+                    255,
+                    199
+                ],
+                eu: [
+                    97,
+                    255,
+                    199
+                ],
+                gd: [
+                    69,
+                    255,
+                    199
+                ],
+                tb: [
+                    48,
+                    255,
+                    199
+                ],
+                dy: [
+                    31,
+                    255,
+                    199
+                ],
+                ho: [
+                    0,
+                    255,
+                    156
+                ],
+                er: [
+                    0,
+                    230,
+                    117
+                ],
+                tm: [
+                    0,
+                    212,
+                    82
+                ],
+                yb: [
+                    0,
+                    191,
+                    56
+                ],
+                lu: [
+                    0,
+                    171,
+                    36
+                ],
+                hf: [
+                    77,
+                    194,
+                    255
+                ],
+                ta: [
+                    77,
+                    166,
+                    255
+                ],
+                w: [
+                    33,
+                    148,
+                    214
+                ],
+                re: [
+                    38,
+                    125,
+                    171
+                ],
+                os: [
+                    38,
+                    102,
+                    150
+                ],
+                ir: [
+                    23,
+                    84,
+                    135
+                ],
+                pt: [
+                    208,
+                    208,
+                    224
+                ],
+                au: [
+                    255,
+                    209,
+                    35
+                ],
+                hg: [
+                    184,
+                    184,
+                    208
+                ],
+                tl: [
+                    166,
+                    84,
+                    77
+                ],
+                pb: [
+                    87,
+                    89,
+                    97
+                ],
+                bi: [
+                    158,
+                    79,
+                    181
+                ],
+                po: [
+                    171,
+                    92,
+                    0
+                ],
+                at: [
+                    117,
+                    79,
+                    69
+                ],
+                rn: [
+                    66,
+                    130,
+                    150
+                ],
+                fr: [
+                    66,
+                    0,
+                    102
+                ],
+                ra: [
+                    0,
+                    125,
+                    0
+                ],
+                ac: [
+                    112,
+                    171,
+                    250
+                ],
+                th: [
+                    0,
+                    186,
+                    255
+                ],
+                pa: [
+                    0,
+                    161,
+                    255
+                ],
+                u: [
+                    0,
+                    143,
+                    255
+                ],
+                np: [
+                    0,
+                    128,
+                    255
+                ],
+                pu: [
+                    0,
+                    107,
+                    255
+                ],
+                am: [
+                    84,
+                    92,
+                    242
+                ],
+                cm: [
+                    120,
+                    92,
+                    227
+                ],
+                bk: [
+                    138,
+                    79,
+                    227
+                ],
+                cf: [
+                    161,
+                    54,
+                    212
+                ],
+                es: [
+                    179,
+                    31,
+                    212
+                ],
+                fm: [
+                    179,
+                    31,
+                    186
+                ],
+                md: [
+                    179,
+                    13,
+                    166
+                ],
+                no: [
+                    189,
+                    13,
+                    135
+                ],
+                lr: [
+                    199,
+                    0,
+                    102
+                ],
+                rf: [
+                    204,
+                    0,
+                    89
+                ],
+                db: [
+                    209,
+                    0,
+                    79
+                ],
+                sg: [
+                    217,
+                    0,
+                    69
+                ],
+                bh: [
+                    224,
+                    0,
+                    56
+                ],
+                hs: [
+                    230,
+                    0,
+                    46
+                ],
+                mt: [
+                    235,
+                    0,
+                    38
+                ],
+                ds: [
+                    235,
+                    0,
+                    38
+                ],
+                rg: [
+                    235,
+                    0,
+                    38
+                ],
+                cn: [
+                    235,
+                    0,
+                    38
+                ],
+                uut: [
+                    235,
+                    0,
+                    38
+                ],
+                uuq: [
+                    235,
+                    0,
+                    38
+                ],
+                uup: [
+                    235,
+                    0,
+                    38
+                ],
+                uuh: [
+                    235,
+                    0,
+                    38
+                ],
+                uus: [
+                    235,
+                    0,
+                    38
+                ],
+                uuo: [
+                    235,
+                    0,
+                    38
+                ]
+            };
+            var atoms = [];
+            var bonds = [];
+            var histogram = {};
+            var bhash = {};
+            var x, y, z, index, e;
+            var lines = text.split('\n');
+            for (var i = 0, l = lines.length; i < l; i++) {
+                if (lines[i].substr(0, 4) === 'ATOM' || lines[i].substr(0, 6) === 'HETATM') {
+                    x = parseFloat(lines[i].substr(30, 7));
+                    y = parseFloat(lines[i].substr(38, 7));
+                    z = parseFloat(lines[i].substr(46, 7));
+                    index = parseInt(lines[i].substr(6, 5)) - 1;
+                    e = trim(lines[i].substr(76, 2)).toLowerCase();
+                    if (e === '') {
+                        e = trim(lines[i].substr(12, 2)).toLowerCase();
+                    }
+                    atoms[index] = [
+                        x,
+                        y,
+                        z,
+                        CPK[e],
+                        capitalize(e)
+                    ];
+                    if (histogram[e] === undefined) {
+                        histogram[e] = 1;
+                    } else {
+                        histogram[e] += 1;
+                    }
+                } else if (lines[i].substr(0, 6) === 'CONECT') {
+                    var satom = parseInt(lines[i].substr(6, 5));
+                    parseBond(11, 5);
+                    parseBond(16, 5);
+                    parseBond(21, 5);
+                    parseBond(26, 5);
+                }
+            }
+            return buildGeometry();
+        }
+    });
+
+    return threex.loaders.PDBLoader = PDBLoader;
 });
 define('skylark-threejs-ex/loaders/PLYLoader',[
     "skylark-threejs",
@@ -74254,6 +89957,143 @@ define('skylark-threejs-ex/loaders/PRWMLoader',[
     }();
 
     return threex.loaders.PRWMLoader = PRWMLoader;
+});
+define('skylark-threejs-ex/loaders/PVRLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var PVRLoader = function (manager) {
+        THREE.CompressedTextureLoader.call(this, manager);
+    };
+    PVRLoader.prototype = Object.assign(Object.create(THREE.CompressedTextureLoader.prototype), {
+        constructor: PVRLoader,
+        parse: function (buffer, loadMipmaps) {
+            var headerLengthInt = 13;
+            var header = new Uint32Array(buffer, 0, headerLengthInt);
+            var pvrDatas = {
+                buffer: buffer,
+                header: header,
+                loadMipmaps: loadMipmaps
+            };
+            if (header[0] === 55727696) {
+                return PVRLoader._parseV3(pvrDatas);
+            } else if (header[11] === 559044176) {
+                return PVRLoader._parseV2(pvrDatas);
+            } else {
+                console.error('THREE.PVRLoader: Unknown PVR format.');
+            }
+        }
+    });
+    PVRLoader._parseV3 = function (pvrDatas) {
+        var header = pvrDatas.header;
+        var bpp, format;
+        var metaLen = header[12], pixelFormat = header[2], height = header[6], width = header[7], numFaces = header[10], numMipmaps = header[11];
+        switch (pixelFormat) {
+        case 0:
+            bpp = 2;
+            format = THREE.RGB_PVRTC_2BPPV1_Format;
+            break;
+        case 1:
+            bpp = 2;
+            format = THREE.RGBA_PVRTC_2BPPV1_Format;
+            break;
+        case 2:
+            bpp = 4;
+            format = THREE.RGB_PVRTC_4BPPV1_Format;
+            break;
+        case 3:
+            bpp = 4;
+            format = THREE.RGBA_PVRTC_4BPPV1_Format;
+            break;
+        default:
+            console.error('THREE.PVRLoader: Unsupported PVR format:', pixelFormat);
+        }
+        pvrDatas.dataPtr = 52 + metaLen;
+        pvrDatas.bpp = bpp;
+        pvrDatas.format = format;
+        pvrDatas.width = width;
+        pvrDatas.height = height;
+        pvrDatas.numSurfaces = numFaces;
+        pvrDatas.numMipmaps = numMipmaps;
+        pvrDatas.isCubemap = numFaces === 6;
+        return PVRLoader._extract(pvrDatas);
+    };
+    PVRLoader._parseV2 = function (pvrDatas) {
+        var header = pvrDatas.header;
+        var headerLength = header[0], height = header[1], width = header[2], numMipmaps = header[3], flags = header[4], bitmaskAlpha = header[10], numSurfs = header[12];
+        var TYPE_MASK = 255;
+        var PVRTC_2 = 24, PVRTC_4 = 25;
+        var formatFlags = flags & TYPE_MASK;
+        var bpp, format;
+        var _hasAlpha = bitmaskAlpha > 0;
+        if (formatFlags === PVRTC_4) {
+            format = _hasAlpha ? THREE.RGBA_PVRTC_4BPPV1_Format : THREE.RGB_PVRTC_4BPPV1_Format;
+            bpp = 4;
+        } else if (formatFlags === PVRTC_2) {
+            format = _hasAlpha ? THREE.RGBA_PVRTC_2BPPV1_Format : THREE.RGB_PVRTC_2BPPV1_Format;
+            bpp = 2;
+        } else {
+            console.error('THREE.PVRLoader: Unknown PVR format:', formatFlags);
+        }
+        pvrDatas.dataPtr = headerLength;
+        pvrDatas.bpp = bpp;
+        pvrDatas.format = format;
+        pvrDatas.width = width;
+        pvrDatas.height = height;
+        pvrDatas.numSurfaces = numSurfs;
+        pvrDatas.numMipmaps = numMipmaps + 1;
+        pvrDatas.isCubemap = numSurfs === 6;
+        return PVRLoader._extract(pvrDatas);
+    };
+    PVRLoader._extract = function (pvrDatas) {
+        var pvr = {
+            mipmaps: [],
+            width: pvrDatas.width,
+            height: pvrDatas.height,
+            format: pvrDatas.format,
+            mipmapCount: pvrDatas.numMipmaps,
+            isCubemap: pvrDatas.isCubemap
+        };
+        var buffer = pvrDatas.buffer;
+        var dataOffset = pvrDatas.dataPtr, bpp = pvrDatas.bpp, numSurfs = pvrDatas.numSurfaces, dataSize = 0, blockSize = 0, blockWidth = 0, blockHeight = 0, widthBlocks = 0, heightBlocks = 0;
+        if (bpp === 2) {
+            blockWidth = 8;
+            blockHeight = 4;
+        } else {
+            blockWidth = 4;
+            blockHeight = 4;
+        }
+        blockSize = blockWidth * blockHeight * bpp / 8;
+        pvr.mipmaps.length = pvrDatas.numMipmaps * numSurfs;
+        var mipLevel = 0;
+        while (mipLevel < pvrDatas.numMipmaps) {
+            var sWidth = pvrDatas.width >> mipLevel, sHeight = pvrDatas.height >> mipLevel;
+            widthBlocks = sWidth / blockWidth;
+            heightBlocks = sHeight / blockHeight;
+            if (widthBlocks < 2)
+                widthBlocks = 2;
+            if (heightBlocks < 2)
+                heightBlocks = 2;
+            dataSize = widthBlocks * heightBlocks * blockSize;
+            for (var surfIndex = 0; surfIndex < numSurfs; surfIndex++) {
+                var byteArray = new Uint8Array(buffer, dataOffset, dataSize);
+                var mipmap = {
+                    data: byteArray,
+                    width: sWidth,
+                    height: sHeight
+                };
+                pvr.mipmaps[surfIndex * pvrDatas.numMipmaps + mipLevel] = mipmap;
+                dataOffset += dataSize;
+            }
+            mipLevel++;
+        }
+        return pvr;
+    };
+    return threex.loaders.PVRLoader = PVRLoader;
 });
 define('skylark-threejs-ex/loaders/STLLoader',[
     "skylark-threejs",
@@ -76119,6 +91959,131 @@ define('skylark-threejs-ex/loaders/TDSLoader',[
 
     return threex.loaders.TDSLoader = TDSLoader;
 });
+define('skylark-threejs-ex/loaders/TTFLoader',[
+    "skylark-threejs",
+    "../threex"
+], function (
+    THREE,
+    threex
+) {
+    'use strict';
+    var TTFLoader = function (manager) {
+        THREE.Loader.call(this, manager);
+        this.reversed = false;
+    };
+    TTFLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+        constructor: TTFLoader,
+        load: function (url, onLoad, onProgress, onError) {
+            var scope = this;
+            var loader = new THREE.FileLoader(this.manager);
+            loader.setPath(this.path);
+            loader.setResponseType('arraybuffer');
+            loader.load(url, function (buffer) {
+                onLoad(scope.parse(buffer));
+            }, onProgress, onError);
+        },
+        parse: function (arraybuffer) {
+            function convert(font, reversed) {
+                var round = Math.round;
+                var glyphs = {};
+                var scale = 100000 / ((font.unitsPerEm || 2048) * 72);
+                var glyphIndexMap = font.encoding.cmap.glyphIndexMap;
+                var unicodes = Object.keys(glyphIndexMap);
+                for (var i = 0; i < unicodes.length; i++) {
+                    var unicode = unicodes[i];
+                    var glyph = font.glyphs.glyphs[glyphIndexMap[unicode]];
+                    if (unicode !== undefined) {
+                        var token = {
+                            ha: round(glyph.advanceWidth * scale),
+                            x_min: round(glyph.xMin * scale),
+                            x_max: round(glyph.xMax * scale),
+                            o: ''
+                        };
+                        if (reversed) {
+                            glyph.path.commands = reverseCommands(glyph.path.commands);
+                        }
+                        glyph.path.commands.forEach(function (command) {
+                            if (command.type.toLowerCase() === 'c') {
+                                command.type = 'b';
+                            }
+                            token.o += command.type.toLowerCase() + ' ';
+                            if (command.x !== undefined && command.y !== undefined) {
+                                token.o += round(command.x * scale) + ' ' + round(command.y * scale) + ' ';
+                            }
+                            if (command.x1 !== undefined && command.y1 !== undefined) {
+                                token.o += round(command.x1 * scale) + ' ' + round(command.y1 * scale) + ' ';
+                            }
+                            if (command.x2 !== undefined && command.y2 !== undefined) {
+                                token.o += round(command.x2 * scale) + ' ' + round(command.y2 * scale) + ' ';
+                            }
+                        });
+                        glyphs[String.fromCodePoint(glyph.unicode)] = token;
+                    }
+                }
+                return {
+                    glyphs: glyphs,
+                    familyName: font.getEnglishName('fullName'),
+                    ascender: round(font.ascender * scale),
+                    descender: round(font.descender * scale),
+                    underlinePosition: font.tables.post.underlinePosition,
+                    underlineThickness: font.tables.post.underlineThickness,
+                    boundingBox: {
+                        xMin: font.tables.head.xMin,
+                        xMax: font.tables.head.xMax,
+                        yMin: font.tables.head.yMin,
+                        yMax: font.tables.head.yMax
+                    },
+                    resolution: 1000,
+                    original_font_information: font.tables.name
+                };
+            }
+            function reverseCommands(commands) {
+                var paths = [];
+                var path;
+                commands.forEach(function (c) {
+                    if (c.type.toLowerCase() === 'm') {
+                        path = [c];
+                        paths.push(path);
+                    } else if (c.type.toLowerCase() !== 'z') {
+                        path.push(c);
+                    }
+                });
+                var reversed = [];
+                paths.forEach(function (p) {
+                    var result = {
+                        type: 'm',
+                        x: p[p.length - 1].x,
+                        y: p[p.length - 1].y
+                    };
+                    reversed.push(result);
+                    for (var i = p.length - 1; i > 0; i--) {
+                        var command = p[i];
+                        var result = { type: command.type };
+                        if (command.x2 !== undefined && command.y2 !== undefined) {
+                            result.x1 = command.x2;
+                            result.y1 = command.y2;
+                            result.x2 = command.x1;
+                            result.y2 = command.y1;
+                        } else if (command.x1 !== undefined && command.y1 !== undefined) {
+                            result.x1 = command.x1;
+                            result.y1 = command.y1;
+                        }
+                        result.x = p[i - 1].x;
+                        result.y = p[i - 1].y;
+                        reversed.push(result);
+                    }
+                });
+                return reversed;
+            }
+            if (typeof opentype === 'undefined') {
+                console.warn("THREE.TTFLoader: The loader requires opentype.js. Make sure it's included before using the loader.");
+                return null;
+            }
+            return convert(opentype.parse(arraybuffer), this.reversed);
+        }
+    });
+    return threex.loaders.TTFLoader = TTFLoader;
+});
 define('skylark-threejs-ex/loaders/VRMLLoader',[
     "skylark-threejs",
     "../threex",
@@ -77868,6 +93833,45 @@ define('skylark-threejs-ex/loaders/VRMLLoader',[
     }();
 
     return threex.loaders.VRMLLoader = VRMLLoader;
+});
+define('skylark-threejs-ex/loaders/VRMLoader',[
+    "skylark-threejs",
+    "../threex",
+    './GLTFLoader'
+], function (
+    THREE, 
+    threex,
+    GLTFLoader
+) {
+    'use strict';
+    var VRMLoader = function () {
+        function VRMLoader(manager) {
+            if (GLTFLoader === undefined) {
+                throw new Error('THREE.VRMLoader: Import GLTFLoader.');
+            }
+            THREE.Loader.call(this, manager);
+            this.gltfLoader = new GLTFLoader(this.manager);
+        }
+        VRMLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
+            constructor: VRMLoader,
+            load: function (url, onLoad, onProgress, onError) {
+                var scope = this;
+                this.gltfLoader.load(url, function (gltf) {
+                    scope.parse(gltf, onLoad);
+                }, onProgress, onError);
+            },
+            setDRACOLoader: function (dracoLoader) {
+                this.glTFLoader.setDRACOLoader(dracoLoader);
+                return this;
+            },
+            parse: function (gltf, onLoad) {
+                onLoad(gltf);
+            }
+        });
+        return VRMLoader;
+    }();
+    
+    return threex.loaders.VRMLoader = VRMLoader;
 });
 define('skylark-threejs-ex/loaders/VTKLoader',[
     "skylark-threejs",
@@ -79729,408 +95733,6 @@ define('skylark-threejs-ex/loaders/XLoader',[
 
     return threex.loaders.XLoader = XLoader;
 });
-define('skylark-threejs-ex/loaders/DDSLoader',[
-    "skylark-threejs",
-    "../threex"
-], function (
-    THREE,
-    threex
-) {
-    'use strict';
-    var DDSLoader = function (manager) {
-        THREE.CompressedTextureLoader.call(this, manager);
-    };
-    DDSLoader.prototype = Object.assign(Object.create(THREE.CompressedTextureLoader.prototype), {
-        constructor: DDSLoader,
-        parse: function (buffer, loadMipmaps) {
-            var dds = {
-                mipmaps: [],
-                width: 0,
-                height: 0,
-                format: null,
-                mipmapCount: 1
-            };
-            var DDS_MAGIC = 542327876;
-            var DDSD_CAPS = 1, DDSD_HEIGHT = 2, DDSD_WIDTH = 4, DDSD_PITCH = 8, DDSD_PIXELFORMAT = 4096, DDSD_MIPMAPCOUNT = 131072, DDSD_LINEARSIZE = 524288, DDSD_DEPTH = 8388608;
-            var DDSCAPS_COMPLEX = 8, DDSCAPS_MIPMAP = 4194304, DDSCAPS_TEXTURE = 4096;
-            var DDSCAPS2_CUBEMAP = 512, DDSCAPS2_CUBEMAP_POSITIVEX = 1024, DDSCAPS2_CUBEMAP_NEGATIVEX = 2048, DDSCAPS2_CUBEMAP_POSITIVEY = 4096, DDSCAPS2_CUBEMAP_NEGATIVEY = 8192, DDSCAPS2_CUBEMAP_POSITIVEZ = 16384, DDSCAPS2_CUBEMAP_NEGATIVEZ = 32768, DDSCAPS2_VOLUME = 2097152;
-            var DDPF_ALPHAPIXELS = 1, DDPF_ALPHA = 2, DDPF_FOURCC = 4, DDPF_RGB = 64, DDPF_YUV = 512, DDPF_LUMINANCE = 131072;
-            function fourCCToInt32(value) {
-                return value.charCodeAt(0) + (value.charCodeAt(1) << 8) + (value.charCodeAt(2) << 16) + (value.charCodeAt(3) << 24);
-            }
-            function int32ToFourCC(value) {
-                return String.fromCharCode(value & 255, value >> 8 & 255, value >> 16 & 255, value >> 24 & 255);
-            }
-            function loadARGBMip(buffer, dataOffset, width, height) {
-                var dataLength = width * height * 4;
-                var srcBuffer = new Uint8Array(buffer, dataOffset, dataLength);
-                var byteArray = new Uint8Array(dataLength);
-                var dst = 0;
-                var src = 0;
-                for (var y = 0; y < height; y++) {
-                    for (var x = 0; x < width; x++) {
-                        var b = srcBuffer[src];
-                        src++;
-                        var g = srcBuffer[src];
-                        src++;
-                        var r = srcBuffer[src];
-                        src++;
-                        var a = srcBuffer[src];
-                        src++;
-                        byteArray[dst] = r;
-                        dst++;
-                        byteArray[dst] = g;
-                        dst++;
-                        byteArray[dst] = b;
-                        dst++;
-                        byteArray[dst] = a;
-                        dst++;
-                    }
-                }
-                return byteArray;
-            }
-            var FOURCC_DXT1 = fourCCToInt32('DXT1');
-            var FOURCC_DXT3 = fourCCToInt32('DXT3');
-            var FOURCC_DXT5 = fourCCToInt32('DXT5');
-            var FOURCC_ETC1 = fourCCToInt32('ETC1');
-            var headerLengthInt = 31;
-            var off_magic = 0;
-            var off_size = 1;
-            var off_flags = 2;
-            var off_height = 3;
-            var off_width = 4;
-            var off_mipmapCount = 7;
-            var off_pfFlags = 20;
-            var off_pfFourCC = 21;
-            var off_RGBBitCount = 22;
-            var off_RBitMask = 23;
-            var off_GBitMask = 24;
-            var off_BBitMask = 25;
-            var off_ABitMask = 26;
-            var off_caps = 27;
-            var off_caps2 = 28;
-            var off_caps3 = 29;
-            var off_caps4 = 30;
-            var header = new Int32Array(buffer, 0, headerLengthInt);
-            if (header[off_magic] !== DDS_MAGIC) {
-                console.error('THREE.DDSLoader.parse: Invalid magic number in DDS header.');
-                return dds;
-            }
-            if (!header[off_pfFlags] & DDPF_FOURCC) {
-                console.error('THREE.DDSLoader.parse: Unsupported format, must contain a FourCC code.');
-                return dds;
-            }
-            var blockBytes;
-            var fourCC = header[off_pfFourCC];
-            var isRGBAUncompressed = false;
-            switch (fourCC) {
-            case FOURCC_DXT1:
-                blockBytes = 8;
-                dds.format = THREE.RGB_S3TC_DXT1_Format;
-                break;
-            case FOURCC_DXT3:
-                blockBytes = 16;
-                dds.format = THREE.RGBA_S3TC_DXT3_Format;
-                break;
-            case FOURCC_DXT5:
-                blockBytes = 16;
-                dds.format = THREE.RGBA_S3TC_DXT5_Format;
-                break;
-            case FOURCC_ETC1:
-                blockBytes = 8;
-                dds.format = THREE.RGB_ETC1_Format;
-                break;
-            default:
-                if (header[off_RGBBitCount] === 32 && header[off_RBitMask] & 16711680 && header[off_GBitMask] & 65280 && header[off_BBitMask] & 255 && header[off_ABitMask] & 4278190080) {
-                    isRGBAUncompressed = true;
-                    blockBytes = 64;
-                    dds.format = THREE.RGBAFormat;
-                } else {
-                    console.error('THREE.DDSLoader.parse: Unsupported FourCC code ', int32ToFourCC(fourCC));
-                    return dds;
-                }
-            }
-            dds.mipmapCount = 1;
-            if (header[off_flags] & DDSD_MIPMAPCOUNT && loadMipmaps !== false) {
-                dds.mipmapCount = Math.max(1, header[off_mipmapCount]);
-            }
-            var caps2 = header[off_caps2];
-            dds.isCubemap = caps2 & DDSCAPS2_CUBEMAP ? true : false;
-            if (dds.isCubemap && (!(caps2 & DDSCAPS2_CUBEMAP_POSITIVEX) || !(caps2 & DDSCAPS2_CUBEMAP_NEGATIVEX) || !(caps2 & DDSCAPS2_CUBEMAP_POSITIVEY) || !(caps2 & DDSCAPS2_CUBEMAP_NEGATIVEY) || !(caps2 & DDSCAPS2_CUBEMAP_POSITIVEZ) || !(caps2 & DDSCAPS2_CUBEMAP_NEGATIVEZ))) {
-                console.error('THREE.DDSLoader.parse: Incomplete cubemap faces');
-                return dds;
-            }
-            dds.width = header[off_width];
-            dds.height = header[off_height];
-            var dataOffset = header[off_size] + 4;
-            var faces = dds.isCubemap ? 6 : 1;
-            for (var face = 0; face < faces; face++) {
-                var width = dds.width;
-                var height = dds.height;
-                for (var i = 0; i < dds.mipmapCount; i++) {
-                    if (isRGBAUncompressed) {
-                        var byteArray = loadARGBMip(buffer, dataOffset, width, height);
-                        var dataLength = byteArray.length;
-                    } else {
-                        var dataLength = Math.max(4, width) / 4 * Math.max(4, height) / 4 * blockBytes;
-                        var byteArray = new Uint8Array(buffer, dataOffset, dataLength);
-                    }
-                    var mipmap = {
-                        'data': byteArray,
-                        'width': width,
-                        'height': height
-                    };
-                    dds.mipmaps.push(mipmap);
-                    dataOffset += dataLength;
-                    width = Math.max(width >> 1, 1);
-                    height = Math.max(height >> 1, 1);
-                }
-            }
-            return dds;
-        }
-    });
-    return threex.loaders.DDSLoader = DDSLoader;
-});
-define('skylark-threejs-ex/loaders/PVRLoader',[
-    "skylark-threejs",
-    "../threex"
-], function (
-    THREE,
-    threex
-) {
-    'use strict';
-    var PVRLoader = function (manager) {
-        THREE.CompressedTextureLoader.call(this, manager);
-    };
-    PVRLoader.prototype = Object.assign(Object.create(THREE.CompressedTextureLoader.prototype), {
-        constructor: PVRLoader,
-        parse: function (buffer, loadMipmaps) {
-            var headerLengthInt = 13;
-            var header = new Uint32Array(buffer, 0, headerLengthInt);
-            var pvrDatas = {
-                buffer: buffer,
-                header: header,
-                loadMipmaps: loadMipmaps
-            };
-            if (header[0] === 55727696) {
-                return PVRLoader._parseV3(pvrDatas);
-            } else if (header[11] === 559044176) {
-                return PVRLoader._parseV2(pvrDatas);
-            } else {
-                console.error('THREE.PVRLoader: Unknown PVR format.');
-            }
-        }
-    });
-    PVRLoader._parseV3 = function (pvrDatas) {
-        var header = pvrDatas.header;
-        var bpp, format;
-        var metaLen = header[12], pixelFormat = header[2], height = header[6], width = header[7], numFaces = header[10], numMipmaps = header[11];
-        switch (pixelFormat) {
-        case 0:
-            bpp = 2;
-            format = THREE.RGB_PVRTC_2BPPV1_Format;
-            break;
-        case 1:
-            bpp = 2;
-            format = THREE.RGBA_PVRTC_2BPPV1_Format;
-            break;
-        case 2:
-            bpp = 4;
-            format = THREE.RGB_PVRTC_4BPPV1_Format;
-            break;
-        case 3:
-            bpp = 4;
-            format = THREE.RGBA_PVRTC_4BPPV1_Format;
-            break;
-        default:
-            console.error('THREE.PVRLoader: Unsupported PVR format:', pixelFormat);
-        }
-        pvrDatas.dataPtr = 52 + metaLen;
-        pvrDatas.bpp = bpp;
-        pvrDatas.format = format;
-        pvrDatas.width = width;
-        pvrDatas.height = height;
-        pvrDatas.numSurfaces = numFaces;
-        pvrDatas.numMipmaps = numMipmaps;
-        pvrDatas.isCubemap = numFaces === 6;
-        return PVRLoader._extract(pvrDatas);
-    };
-    PVRLoader._parseV2 = function (pvrDatas) {
-        var header = pvrDatas.header;
-        var headerLength = header[0], height = header[1], width = header[2], numMipmaps = header[3], flags = header[4], bitmaskAlpha = header[10], numSurfs = header[12];
-        var TYPE_MASK = 255;
-        var PVRTC_2 = 24, PVRTC_4 = 25;
-        var formatFlags = flags & TYPE_MASK;
-        var bpp, format;
-        var _hasAlpha = bitmaskAlpha > 0;
-        if (formatFlags === PVRTC_4) {
-            format = _hasAlpha ? THREE.RGBA_PVRTC_4BPPV1_Format : THREE.RGB_PVRTC_4BPPV1_Format;
-            bpp = 4;
-        } else if (formatFlags === PVRTC_2) {
-            format = _hasAlpha ? THREE.RGBA_PVRTC_2BPPV1_Format : THREE.RGB_PVRTC_2BPPV1_Format;
-            bpp = 2;
-        } else {
-            console.error('THREE.PVRLoader: Unknown PVR format:', formatFlags);
-        }
-        pvrDatas.dataPtr = headerLength;
-        pvrDatas.bpp = bpp;
-        pvrDatas.format = format;
-        pvrDatas.width = width;
-        pvrDatas.height = height;
-        pvrDatas.numSurfaces = numSurfs;
-        pvrDatas.numMipmaps = numMipmaps + 1;
-        pvrDatas.isCubemap = numSurfs === 6;
-        return PVRLoader._extract(pvrDatas);
-    };
-    PVRLoader._extract = function (pvrDatas) {
-        var pvr = {
-            mipmaps: [],
-            width: pvrDatas.width,
-            height: pvrDatas.height,
-            format: pvrDatas.format,
-            mipmapCount: pvrDatas.numMipmaps,
-            isCubemap: pvrDatas.isCubemap
-        };
-        var buffer = pvrDatas.buffer;
-        var dataOffset = pvrDatas.dataPtr, bpp = pvrDatas.bpp, numSurfs = pvrDatas.numSurfaces, dataSize = 0, blockSize = 0, blockWidth = 0, blockHeight = 0, widthBlocks = 0, heightBlocks = 0;
-        if (bpp === 2) {
-            blockWidth = 8;
-            blockHeight = 4;
-        } else {
-            blockWidth = 4;
-            blockHeight = 4;
-        }
-        blockSize = blockWidth * blockHeight * bpp / 8;
-        pvr.mipmaps.length = pvrDatas.numMipmaps * numSurfs;
-        var mipLevel = 0;
-        while (mipLevel < pvrDatas.numMipmaps) {
-            var sWidth = pvrDatas.width >> mipLevel, sHeight = pvrDatas.height >> mipLevel;
-            widthBlocks = sWidth / blockWidth;
-            heightBlocks = sHeight / blockHeight;
-            if (widthBlocks < 2)
-                widthBlocks = 2;
-            if (heightBlocks < 2)
-                heightBlocks = 2;
-            dataSize = widthBlocks * heightBlocks * blockSize;
-            for (var surfIndex = 0; surfIndex < numSurfs; surfIndex++) {
-                var byteArray = new Uint8Array(buffer, dataOffset, dataSize);
-                var mipmap = {
-                    data: byteArray,
-                    width: sWidth,
-                    height: sHeight
-                };
-                pvr.mipmaps[surfIndex * pvrDatas.numMipmaps + mipLevel] = mipmap;
-                dataOffset += dataSize;
-            }
-            mipLevel++;
-        }
-        return pvr;
-    };
-    return threex.loaders.PVRLoader = PVRLoader;
-});
-define('skylark-threejs-ex/loaders/KTXLoader',[
-    "skylark-threejs",
-    "../threex"
-], function (
-    THREE,
-    threex
-) {
-    'use strict';
-    var KTXLoader = function (manager) {
-        THREE.CompressedTextureLoader.call(this, manager);
-    };
-    KTXLoader.prototype = Object.assign(Object.create(THREE.CompressedTextureLoader.prototype), {
-        constructor: KTXLoader,
-        parse: function (buffer, loadMipmaps) {
-            var ktx = new KhronosTextureContainer(buffer, 1);
-            return {
-                mipmaps: ktx.mipmaps(loadMipmaps),
-                width: ktx.pixelWidth,
-                height: ktx.pixelHeight,
-                format: ktx.glInternalFormat,
-                isCubemap: ktx.numberOfFaces === 6,
-                mipmapCount: ktx.numberOfMipmapLevels
-            };
-        }
-    });
-    var KhronosTextureContainer = function () {
-        function KhronosTextureContainer(arrayBuffer, facesExpected) {
-            this.arrayBuffer = arrayBuffer;
-            var identifier = new Uint8Array(this.arrayBuffer, 0, 12);
-            if (identifier[0] !== 171 || identifier[1] !== 75 || identifier[2] !== 84 || identifier[3] !== 88 || identifier[4] !== 32 || identifier[5] !== 49 || identifier[6] !== 49 || identifier[7] !== 187 || identifier[8] !== 13 || identifier[9] !== 10 || identifier[10] !== 26 || identifier[11] !== 10) {
-                console.error('texture missing KTX identifier');
-                return;
-            }
-            var dataSize = Uint32Array.BYTES_PER_ELEMENT;
-            var headerDataView = new DataView(this.arrayBuffer, 12, 13 * dataSize);
-            var endianness = headerDataView.getUint32(0, true);
-            var littleEndian = endianness === 67305985;
-            this.glType = headerDataView.getUint32(1 * dataSize, littleEndian);
-            this.glTypeSize = headerDataView.getUint32(2 * dataSize, littleEndian);
-            this.glFormat = headerDataView.getUint32(3 * dataSize, littleEndian);
-            this.glInternalFormat = headerDataView.getUint32(4 * dataSize, littleEndian);
-            this.glBaseInternalFormat = headerDataView.getUint32(5 * dataSize, littleEndian);
-            this.pixelWidth = headerDataView.getUint32(6 * dataSize, littleEndian);
-            this.pixelHeight = headerDataView.getUint32(7 * dataSize, littleEndian);
-            this.pixelDepth = headerDataView.getUint32(8 * dataSize, littleEndian);
-            this.numberOfArrayElements = headerDataView.getUint32(9 * dataSize, littleEndian);
-            this.numberOfFaces = headerDataView.getUint32(10 * dataSize, littleEndian);
-            this.numberOfMipmapLevels = headerDataView.getUint32(11 * dataSize, littleEndian);
-            this.bytesOfKeyValueData = headerDataView.getUint32(12 * dataSize, littleEndian);
-            if (this.glType !== 0) {
-                console.warn('only compressed formats currently supported');
-                return;
-            } else {
-                this.numberOfMipmapLevels = Math.max(1, this.numberOfMipmapLevels);
-            }
-            if (this.pixelHeight === 0 || this.pixelDepth !== 0) {
-                console.warn('only 2D textures currently supported');
-                return;
-            }
-            if (this.numberOfArrayElements !== 0) {
-                console.warn('texture arrays not currently supported');
-                return;
-            }
-            if (this.numberOfFaces !== facesExpected) {
-                console.warn('number of faces expected' + facesExpected + ', but found ' + this.numberOfFaces);
-                return;
-            }
-            this.loadType = KhronosTextureContainer.COMPRESSED_2D;
-        }
-        KhronosTextureContainer.prototype.mipmaps = function (loadMipmaps) {
-            var mipmaps = [];
-            var dataOffset = KhronosTextureContainer.HEADER_LEN + this.bytesOfKeyValueData;
-            var width = this.pixelWidth;
-            var height = this.pixelHeight;
-            var mipmapCount = loadMipmaps ? this.numberOfMipmapLevels : 1;
-            for (var level = 0; level < mipmapCount; level++) {
-                var imageSize = new Int32Array(this.arrayBuffer, dataOffset, 1)[0];
-                dataOffset += 4;
-                for (var face = 0; face < this.numberOfFaces; face++) {
-                    var byteArray = new Uint8Array(this.arrayBuffer, dataOffset, imageSize);
-                    mipmaps.push({
-                        'data': byteArray,
-                        'width': width,
-                        'height': height
-                    });
-                    dataOffset += imageSize;
-                    dataOffset += 3 - (imageSize + 3) % 4;
-                }
-                width = Math.max(1, width * 0.5);
-                height = Math.max(1, height * 0.5);
-            }
-            return mipmaps;
-        };
-        KhronosTextureContainer.HEADER_LEN = 12 + 13 * 4;
-        KhronosTextureContainer.COMPRESSED_2D = 0;
-        KhronosTextureContainer.COMPRESSED_3D = 1;
-        KhronosTextureContainer.TEX_2D = 2;
-        KhronosTextureContainer.TEX_3D = 3;
-        return KhronosTextureContainer;
-    }();
-
-    return threex.loaders.KTXLoader = KTXLoader;
-});
 define('skylark-threejs-ex/math/ColorConverter',[
     "skylark-threejs",
     "../threex"
@@ -81538,995 +97140,6 @@ define('skylark-threejs-ex/misc/Gyroscope',[
     }();
 
     return threex.misc.Gyroscope = Gyroscope;
-});
-define('skylark-threejs-ex/loaders/MD2Loader',[
-    "skylark-threejs",
-    "../threex"
-], function (
-    THREE,
-    threex
-) {
-    'use strict';
-    var MD2Loader = function (manager) {
-        THREE.Loader.call(this, manager);
-    };
-    MD2Loader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
-        constructor: MD2Loader,
-        load: function (url, onLoad, onProgress, onError) {
-            var scope = this;
-            var loader = new THREE.FileLoader(scope.manager);
-            loader.setPath(scope.path);
-            loader.setResponseType('arraybuffer');
-            loader.load(url, function (buffer) {
-                onLoad(scope.parse(buffer));
-            }, onProgress, onError);
-        },
-        parse: function () {
-            var normalData = [
-                [
-                    -0.525731,
-                    0,
-                    0.850651
-                ],
-                [
-                    -0.442863,
-                    0.238856,
-                    0.864188
-                ],
-                [
-                    -0.295242,
-                    0,
-                    0.955423
-                ],
-                [
-                    -0.309017,
-                    0.5,
-                    0.809017
-                ],
-                [
-                    -0.16246,
-                    0.262866,
-                    0.951056
-                ],
-                [
-                    0,
-                    0,
-                    1
-                ],
-                [
-                    0,
-                    0.850651,
-                    0.525731
-                ],
-                [
-                    -0.147621,
-                    0.716567,
-                    0.681718
-                ],
-                [
-                    0.147621,
-                    0.716567,
-                    0.681718
-                ],
-                [
-                    0,
-                    0.525731,
-                    0.850651
-                ],
-                [
-                    0.309017,
-                    0.5,
-                    0.809017
-                ],
-                [
-                    0.525731,
-                    0,
-                    0.850651
-                ],
-                [
-                    0.295242,
-                    0,
-                    0.955423
-                ],
-                [
-                    0.442863,
-                    0.238856,
-                    0.864188
-                ],
-                [
-                    0.16246,
-                    0.262866,
-                    0.951056
-                ],
-                [
-                    -0.681718,
-                    0.147621,
-                    0.716567
-                ],
-                [
-                    -0.809017,
-                    0.309017,
-                    0.5
-                ],
-                [
-                    -0.587785,
-                    0.425325,
-                    0.688191
-                ],
-                [
-                    -0.850651,
-                    0.525731,
-                    0
-                ],
-                [
-                    -0.864188,
-                    0.442863,
-                    0.238856
-                ],
-                [
-                    -0.716567,
-                    0.681718,
-                    0.147621
-                ],
-                [
-                    -0.688191,
-                    0.587785,
-                    0.425325
-                ],
-                [
-                    -0.5,
-                    0.809017,
-                    0.309017
-                ],
-                [
-                    -0.238856,
-                    0.864188,
-                    0.442863
-                ],
-                [
-                    -0.425325,
-                    0.688191,
-                    0.587785
-                ],
-                [
-                    -0.716567,
-                    0.681718,
-                    -0.147621
-                ],
-                [
-                    -0.5,
-                    0.809017,
-                    -0.309017
-                ],
-                [
-                    -0.525731,
-                    0.850651,
-                    0
-                ],
-                [
-                    0,
-                    0.850651,
-                    -0.525731
-                ],
-                [
-                    -0.238856,
-                    0.864188,
-                    -0.442863
-                ],
-                [
-                    0,
-                    0.955423,
-                    -0.295242
-                ],
-                [
-                    -0.262866,
-                    0.951056,
-                    -0.16246
-                ],
-                [
-                    0,
-                    1,
-                    0
-                ],
-                [
-                    0,
-                    0.955423,
-                    0.295242
-                ],
-                [
-                    -0.262866,
-                    0.951056,
-                    0.16246
-                ],
-                [
-                    0.238856,
-                    0.864188,
-                    0.442863
-                ],
-                [
-                    0.262866,
-                    0.951056,
-                    0.16246
-                ],
-                [
-                    0.5,
-                    0.809017,
-                    0.309017
-                ],
-                [
-                    0.238856,
-                    0.864188,
-                    -0.442863
-                ],
-                [
-                    0.262866,
-                    0.951056,
-                    -0.16246
-                ],
-                [
-                    0.5,
-                    0.809017,
-                    -0.309017
-                ],
-                [
-                    0.850651,
-                    0.525731,
-                    0
-                ],
-                [
-                    0.716567,
-                    0.681718,
-                    0.147621
-                ],
-                [
-                    0.716567,
-                    0.681718,
-                    -0.147621
-                ],
-                [
-                    0.525731,
-                    0.850651,
-                    0
-                ],
-                [
-                    0.425325,
-                    0.688191,
-                    0.587785
-                ],
-                [
-                    0.864188,
-                    0.442863,
-                    0.238856
-                ],
-                [
-                    0.688191,
-                    0.587785,
-                    0.425325
-                ],
-                [
-                    0.809017,
-                    0.309017,
-                    0.5
-                ],
-                [
-                    0.681718,
-                    0.147621,
-                    0.716567
-                ],
-                [
-                    0.587785,
-                    0.425325,
-                    0.688191
-                ],
-                [
-                    0.955423,
-                    0.295242,
-                    0
-                ],
-                [
-                    1,
-                    0,
-                    0
-                ],
-                [
-                    0.951056,
-                    0.16246,
-                    0.262866
-                ],
-                [
-                    0.850651,
-                    -0.525731,
-                    0
-                ],
-                [
-                    0.955423,
-                    -0.295242,
-                    0
-                ],
-                [
-                    0.864188,
-                    -0.442863,
-                    0.238856
-                ],
-                [
-                    0.951056,
-                    -0.16246,
-                    0.262866
-                ],
-                [
-                    0.809017,
-                    -0.309017,
-                    0.5
-                ],
-                [
-                    0.681718,
-                    -0.147621,
-                    0.716567
-                ],
-                [
-                    0.850651,
-                    0,
-                    0.525731
-                ],
-                [
-                    0.864188,
-                    0.442863,
-                    -0.238856
-                ],
-                [
-                    0.809017,
-                    0.309017,
-                    -0.5
-                ],
-                [
-                    0.951056,
-                    0.16246,
-                    -0.262866
-                ],
-                [
-                    0.525731,
-                    0,
-                    -0.850651
-                ],
-                [
-                    0.681718,
-                    0.147621,
-                    -0.716567
-                ],
-                [
-                    0.681718,
-                    -0.147621,
-                    -0.716567
-                ],
-                [
-                    0.850651,
-                    0,
-                    -0.525731
-                ],
-                [
-                    0.809017,
-                    -0.309017,
-                    -0.5
-                ],
-                [
-                    0.864188,
-                    -0.442863,
-                    -0.238856
-                ],
-                [
-                    0.951056,
-                    -0.16246,
-                    -0.262866
-                ],
-                [
-                    0.147621,
-                    0.716567,
-                    -0.681718
-                ],
-                [
-                    0.309017,
-                    0.5,
-                    -0.809017
-                ],
-                [
-                    0.425325,
-                    0.688191,
-                    -0.587785
-                ],
-                [
-                    0.442863,
-                    0.238856,
-                    -0.864188
-                ],
-                [
-                    0.587785,
-                    0.425325,
-                    -0.688191
-                ],
-                [
-                    0.688191,
-                    0.587785,
-                    -0.425325
-                ],
-                [
-                    -0.147621,
-                    0.716567,
-                    -0.681718
-                ],
-                [
-                    -0.309017,
-                    0.5,
-                    -0.809017
-                ],
-                [
-                    0,
-                    0.525731,
-                    -0.850651
-                ],
-                [
-                    -0.525731,
-                    0,
-                    -0.850651
-                ],
-                [
-                    -0.442863,
-                    0.238856,
-                    -0.864188
-                ],
-                [
-                    -0.295242,
-                    0,
-                    -0.955423
-                ],
-                [
-                    -0.16246,
-                    0.262866,
-                    -0.951056
-                ],
-                [
-                    0,
-                    0,
-                    -1
-                ],
-                [
-                    0.295242,
-                    0,
-                    -0.955423
-                ],
-                [
-                    0.16246,
-                    0.262866,
-                    -0.951056
-                ],
-                [
-                    -0.442863,
-                    -0.238856,
-                    -0.864188
-                ],
-                [
-                    -0.309017,
-                    -0.5,
-                    -0.809017
-                ],
-                [
-                    -0.16246,
-                    -0.262866,
-                    -0.951056
-                ],
-                [
-                    0,
-                    -0.850651,
-                    -0.525731
-                ],
-                [
-                    -0.147621,
-                    -0.716567,
-                    -0.681718
-                ],
-                [
-                    0.147621,
-                    -0.716567,
-                    -0.681718
-                ],
-                [
-                    0,
-                    -0.525731,
-                    -0.850651
-                ],
-                [
-                    0.309017,
-                    -0.5,
-                    -0.809017
-                ],
-                [
-                    0.442863,
-                    -0.238856,
-                    -0.864188
-                ],
-                [
-                    0.16246,
-                    -0.262866,
-                    -0.951056
-                ],
-                [
-                    0.238856,
-                    -0.864188,
-                    -0.442863
-                ],
-                [
-                    0.5,
-                    -0.809017,
-                    -0.309017
-                ],
-                [
-                    0.425325,
-                    -0.688191,
-                    -0.587785
-                ],
-                [
-                    0.716567,
-                    -0.681718,
-                    -0.147621
-                ],
-                [
-                    0.688191,
-                    -0.587785,
-                    -0.425325
-                ],
-                [
-                    0.587785,
-                    -0.425325,
-                    -0.688191
-                ],
-                [
-                    0,
-                    -0.955423,
-                    -0.295242
-                ],
-                [
-                    0,
-                    -1,
-                    0
-                ],
-                [
-                    0.262866,
-                    -0.951056,
-                    -0.16246
-                ],
-                [
-                    0,
-                    -0.850651,
-                    0.525731
-                ],
-                [
-                    0,
-                    -0.955423,
-                    0.295242
-                ],
-                [
-                    0.238856,
-                    -0.864188,
-                    0.442863
-                ],
-                [
-                    0.262866,
-                    -0.951056,
-                    0.16246
-                ],
-                [
-                    0.5,
-                    -0.809017,
-                    0.309017
-                ],
-                [
-                    0.716567,
-                    -0.681718,
-                    0.147621
-                ],
-                [
-                    0.525731,
-                    -0.850651,
-                    0
-                ],
-                [
-                    -0.238856,
-                    -0.864188,
-                    -0.442863
-                ],
-                [
-                    -0.5,
-                    -0.809017,
-                    -0.309017
-                ],
-                [
-                    -0.262866,
-                    -0.951056,
-                    -0.16246
-                ],
-                [
-                    -0.850651,
-                    -0.525731,
-                    0
-                ],
-                [
-                    -0.716567,
-                    -0.681718,
-                    -0.147621
-                ],
-                [
-                    -0.716567,
-                    -0.681718,
-                    0.147621
-                ],
-                [
-                    -0.525731,
-                    -0.850651,
-                    0
-                ],
-                [
-                    -0.5,
-                    -0.809017,
-                    0.309017
-                ],
-                [
-                    -0.238856,
-                    -0.864188,
-                    0.442863
-                ],
-                [
-                    -0.262866,
-                    -0.951056,
-                    0.16246
-                ],
-                [
-                    -0.864188,
-                    -0.442863,
-                    0.238856
-                ],
-                [
-                    -0.809017,
-                    -0.309017,
-                    0.5
-                ],
-                [
-                    -0.688191,
-                    -0.587785,
-                    0.425325
-                ],
-                [
-                    -0.681718,
-                    -0.147621,
-                    0.716567
-                ],
-                [
-                    -0.442863,
-                    -0.238856,
-                    0.864188
-                ],
-                [
-                    -0.587785,
-                    -0.425325,
-                    0.688191
-                ],
-                [
-                    -0.309017,
-                    -0.5,
-                    0.809017
-                ],
-                [
-                    -0.147621,
-                    -0.716567,
-                    0.681718
-                ],
-                [
-                    -0.425325,
-                    -0.688191,
-                    0.587785
-                ],
-                [
-                    -0.16246,
-                    -0.262866,
-                    0.951056
-                ],
-                [
-                    0.442863,
-                    -0.238856,
-                    0.864188
-                ],
-                [
-                    0.16246,
-                    -0.262866,
-                    0.951056
-                ],
-                [
-                    0.309017,
-                    -0.5,
-                    0.809017
-                ],
-                [
-                    0.147621,
-                    -0.716567,
-                    0.681718
-                ],
-                [
-                    0,
-                    -0.525731,
-                    0.850651
-                ],
-                [
-                    0.425325,
-                    -0.688191,
-                    0.587785
-                ],
-                [
-                    0.587785,
-                    -0.425325,
-                    0.688191
-                ],
-                [
-                    0.688191,
-                    -0.587785,
-                    0.425325
-                ],
-                [
-                    -0.955423,
-                    0.295242,
-                    0
-                ],
-                [
-                    -0.951056,
-                    0.16246,
-                    0.262866
-                ],
-                [
-                    -1,
-                    0,
-                    0
-                ],
-                [
-                    -0.850651,
-                    0,
-                    0.525731
-                ],
-                [
-                    -0.955423,
-                    -0.295242,
-                    0
-                ],
-                [
-                    -0.951056,
-                    -0.16246,
-                    0.262866
-                ],
-                [
-                    -0.864188,
-                    0.442863,
-                    -0.238856
-                ],
-                [
-                    -0.951056,
-                    0.16246,
-                    -0.262866
-                ],
-                [
-                    -0.809017,
-                    0.309017,
-                    -0.5
-                ],
-                [
-                    -0.864188,
-                    -0.442863,
-                    -0.238856
-                ],
-                [
-                    -0.951056,
-                    -0.16246,
-                    -0.262866
-                ],
-                [
-                    -0.809017,
-                    -0.309017,
-                    -0.5
-                ],
-                [
-                    -0.681718,
-                    0.147621,
-                    -0.716567
-                ],
-                [
-                    -0.681718,
-                    -0.147621,
-                    -0.716567
-                ],
-                [
-                    -0.850651,
-                    0,
-                    -0.525731
-                ],
-                [
-                    -0.688191,
-                    0.587785,
-                    -0.425325
-                ],
-                [
-                    -0.587785,
-                    0.425325,
-                    -0.688191
-                ],
-                [
-                    -0.425325,
-                    0.688191,
-                    -0.587785
-                ],
-                [
-                    -0.425325,
-                    -0.688191,
-                    -0.587785
-                ],
-                [
-                    -0.587785,
-                    -0.425325,
-                    -0.688191
-                ],
-                [
-                    -0.688191,
-                    -0.587785,
-                    -0.425325
-                ]
-            ];
-            return function (buffer) {
-                var data = new DataView(buffer);
-                var header = {};
-                var headerNames = [
-                    'ident',
-                    'version',
-                    'skinwidth',
-                    'skinheight',
-                    'framesize',
-                    'num_skins',
-                    'num_vertices',
-                    'num_st',
-                    'num_tris',
-                    'num_glcmds',
-                    'num_frames',
-                    'offset_skins',
-                    'offset_st',
-                    'offset_tris',
-                    'offset_frames',
-                    'offset_glcmds',
-                    'offset_end'
-                ];
-                for (var i = 0; i < headerNames.length; i++) {
-                    header[headerNames[i]] = data.getInt32(i * 4, true);
-                }
-                if (header.ident !== 844121161 || header.version !== 8) {
-                    console.error('Not a valid MD2 file');
-                    return;
-                }
-                if (header.offset_end !== data.byteLength) {
-                    console.error('Corrupted MD2 file');
-                    return;
-                }
-                var geometry = new THREE.BufferGeometry();
-                var uvsTemp = [];
-                var offset = header.offset_st;
-                for (var i = 0, l = header.num_st; i < l; i++) {
-                    var u = data.getInt16(offset + 0, true);
-                    var v = data.getInt16(offset + 2, true);
-                    uvsTemp.push(u / header.skinwidth, 1 - v / header.skinheight);
-                    offset += 4;
-                }
-                offset = header.offset_tris;
-                var vertexIndices = [];
-                var uvIndices = [];
-                for (var i = 0, l = header.num_tris; i < l; i++) {
-                    vertexIndices.push(data.getUint16(offset + 0, true), data.getUint16(offset + 2, true), data.getUint16(offset + 4, true));
-                    uvIndices.push(data.getUint16(offset + 6, true), data.getUint16(offset + 8, true), data.getUint16(offset + 10, true));
-                    offset += 12;
-                }
-                var translation = new THREE.Vector3();
-                var scale = new THREE.Vector3();
-                var string = [];
-                var frames = [];
-                offset = header.offset_frames;
-                for (var i = 0, l = header.num_frames; i < l; i++) {
-                    scale.set(data.getFloat32(offset + 0, true), data.getFloat32(offset + 4, true), data.getFloat32(offset + 8, true));
-                    translation.set(data.getFloat32(offset + 12, true), data.getFloat32(offset + 16, true), data.getFloat32(offset + 20, true));
-                    offset += 24;
-                    for (var j = 0; j < 16; j++) {
-                        var character = data.getUint8(offset + j, true);
-                        if (character === 0)
-                            break;
-                        string[j] = character;
-                    }
-                    var frame = {
-                        name: String.fromCharCode.apply(null, string),
-                        vertices: [],
-                        normals: []
-                    };
-                    offset += 16;
-                    for (var j = 0; j < header.num_vertices; j++) {
-                        var x = data.getUint8(offset++, true);
-                        var y = data.getUint8(offset++, true);
-                        var z = data.getUint8(offset++, true);
-                        var n = normalData[data.getUint8(offset++, true)];
-                        x = x * scale.x + translation.x;
-                        y = y * scale.y + translation.y;
-                        z = z * scale.z + translation.z;
-                        frame.vertices.push(x, z, y);
-                        frame.normals.push(n[0], n[2], n[1]);
-                    }
-                    frames.push(frame);
-                }
-                var positions = [];
-                var normals = [];
-                var uvs = [];
-                var verticesTemp = frames[0].vertices;
-                var normalsTemp = frames[0].normals;
-                for (var i = 0, l = vertexIndices.length; i < l; i++) {
-                    var vertexIndex = vertexIndices[i];
-                    var stride = vertexIndex * 3;
-                    var x = verticesTemp[stride];
-                    var y = verticesTemp[stride + 1];
-                    var z = verticesTemp[stride + 2];
-                    positions.push(x, y, z);
-                    var nx = normalsTemp[stride];
-                    var ny = normalsTemp[stride + 1];
-                    var nz = normalsTemp[stride + 2];
-                    normals.push(nx, ny, nz);
-                    var uvIndex = uvIndices[i];
-                    stride = uvIndex * 2;
-                    var u = uvsTemp[stride];
-                    var v = uvsTemp[stride + 1];
-                    uvs.push(u, v);
-                }
-                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-                geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-                var morphPositions = [];
-                var morphNormals = [];
-                for (var i = 0, l = frames.length; i < l; i++) {
-                    var frame = frames[i];
-                    var attributeName = frame.name;
-                    if (frame.vertices.length > 0) {
-                        var positions = [];
-                        for (var j = 0, jl = vertexIndices.length; j < jl; j++) {
-                            var vertexIndex = vertexIndices[j];
-                            var stride = vertexIndex * 3;
-                            var x = frame.vertices[stride];
-                            var y = frame.vertices[stride + 1];
-                            var z = frame.vertices[stride + 2];
-                            positions.push(x, y, z);
-                        }
-                        var positionAttribute = new THREE.Float32BufferAttribute(positions, 3);
-                        positionAttribute.name = attributeName;
-                        morphPositions.push(positionAttribute);
-                    }
-                    if (frame.normals.length > 0) {
-                        var normals = [];
-                        for (var j = 0, jl = vertexIndices.length; j < jl; j++) {
-                            var vertexIndex = vertexIndices[j];
-                            var stride = vertexIndex * 3;
-                            var nx = frame.normals[stride];
-                            var ny = frame.normals[stride + 1];
-                            var nz = frame.normals[stride + 2];
-                            normals.push(nx, ny, nz);
-                        }
-                        var normalAttribute = new THREE.Float32BufferAttribute(normals, 3);
-                        normalAttribute.name = attributeName;
-                        morphNormals.push(normalAttribute);
-                    }
-                }
-                geometry.morphAttributes.position = morphPositions;
-                geometry.morphAttributes.normal = morphNormals;
-                geometry.morphTargetsRelative = false;
-                geometry.animations = THREE.AnimationClip.CreateClipsFromMorphTargetSequences(frames, 10);
-                return geometry;
-            };
-        }()
-    });
-
-    return threex.loaders.MD2Loader = MD2Loader;
 });
 define('skylark-threejs-ex/misc/MD2Character',[
     "skylark-threejs",
@@ -84344,404 +98957,6 @@ define('skylark-threejs-ex/misc/TubePainter',[
         };
     }
     return threex.misc.TubePainter = TubePainter;
-});
-define('skylark-threejs-ex/misc/VolumeSlice',[
-    "skylark-threejs",
-    "../threex"
-], function (
-    THREE,
-    threex
-) {
-    'use strict';
-    var VolumeSlice = function (volume, index, axis) {
-        var slice = this;
-        this.volume = volume;
-        index = index || 0;
-        Object.defineProperty(this, 'index', {
-            get: function () {
-                return index;
-            },
-            set: function (value) {
-                index = value;
-                slice.geometryNeedsUpdate = true;
-                return index;
-            }
-        });
-        this.axis = axis || 'z';
-        this.canvas = document.createElement('canvas');
-        this.canvasBuffer = document.createElement('canvas');
-        this.updateGeometry();
-        var canvasMap = new THREE.Texture(this.canvas);
-        canvasMap.minFilter = THREE.LinearFilter;
-        canvasMap.wrapS = canvasMap.wrapT = THREE.ClampToEdgeWrapping;
-        var material = new THREE.MeshBasicMaterial({
-            map: canvasMap,
-            side: THREE.DoubleSide,
-            transparent: true
-        });
-        this.mesh = new THREE.Mesh(this.geometry, material);
-        this.mesh.matrixAutoUpdate = false;
-        this.geometryNeedsUpdate = true;
-        this.repaint();
-    };
-    VolumeSlice.prototype = {
-        constructor: VolumeSlice,
-        repaint: function () {
-            if (this.geometryNeedsUpdate) {
-                this.updateGeometry();
-            }
-            var iLength = this.iLength, jLength = this.jLength, sliceAccess = this.sliceAccess, volume = this.volume, canvas = this.canvasBuffer, ctx = this.ctxBuffer;
-            var imgData = ctx.getImageData(0, 0, iLength, jLength);
-            var data = imgData.data;
-            var volumeData = volume.data;
-            var upperThreshold = volume.upperThreshold;
-            var lowerThreshold = volume.lowerThreshold;
-            var windowLow = volume.windowLow;
-            var windowHigh = volume.windowHigh;
-            var pixelCount = 0;
-            if (volume.dataType === 'label') {
-                for (var j = 0; j < jLength; j++) {
-                    for (var i = 0; i < iLength; i++) {
-                        var label = volumeData[sliceAccess(i, j)];
-                        label = label >= this.colorMap.length ? label % this.colorMap.length + 1 : label;
-                        var color = this.colorMap[label];
-                        data[4 * pixelCount] = color >> 24 & 255;
-                        data[4 * pixelCount + 1] = color >> 16 & 255;
-                        data[4 * pixelCount + 2] = color >> 8 & 255;
-                        data[4 * pixelCount + 3] = color & 255;
-                        pixelCount++;
-                    }
-                }
-            } else {
-                for (var j = 0; j < jLength; j++) {
-                    for (var i = 0; i < iLength; i++) {
-                        var value = volumeData[sliceAccess(i, j)];
-                        var alpha = 255;
-                        alpha = upperThreshold >= value ? lowerThreshold <= value ? alpha : 0 : 0;
-                        value = Math.floor(255 * (value - windowLow) / (windowHigh - windowLow));
-                        value = value > 255 ? 255 : value < 0 ? 0 : value | 0;
-                        data[4 * pixelCount] = value;
-                        data[4 * pixelCount + 1] = value;
-                        data[4 * pixelCount + 2] = value;
-                        data[4 * pixelCount + 3] = alpha;
-                        pixelCount++;
-                    }
-                }
-            }
-            ctx.putImageData(imgData, 0, 0);
-            this.ctx.drawImage(canvas, 0, 0, iLength, jLength, 0, 0, this.canvas.width, this.canvas.height);
-            this.mesh.material.map.needsUpdate = true;
-        },
-        updateGeometry: function () {
-            var extracted = this.volume.extractPerpendicularPlane(this.axis, this.index);
-            this.sliceAccess = extracted.sliceAccess;
-            this.jLength = extracted.jLength;
-            this.iLength = extracted.iLength;
-            this.matrix = extracted.matrix;
-            this.canvas.width = extracted.planeWidth;
-            this.canvas.height = extracted.planeHeight;
-            this.canvasBuffer.width = this.iLength;
-            this.canvasBuffer.height = this.jLength;
-            this.ctx = this.canvas.getContext('2d');
-            this.ctxBuffer = this.canvasBuffer.getContext('2d');
-            if (this.geometry)
-                this.geometry.dispose();
-            this.geometry = new THREE.PlaneBufferGeometry(extracted.planeWidth, extracted.planeHeight);
-            if (this.mesh) {
-                this.mesh.geometry = this.geometry;
-                this.mesh.matrix.identity();
-                this.mesh.applyMatrix4(this.matrix);
-            }
-            this.geometryNeedsUpdate = false;
-        }
-    };
-    return threex.misc.VolumeSlice = VolumeSlice;
-});
-define('skylark-threejs-ex/misc/Volume',[
-    "skylark-threejs",
-    "../threex",
-    '../misc/VolumeSlice'
-], function (
-    THREE, 
-    threex,
-    VolumeSlice
-) {
-    'use strict';
-    var Volume = function (xLength, yLength, zLength, type, arrayBuffer) {
-        if (arguments.length > 0) {
-            this.xLength = Number(xLength) || 1;
-            this.yLength = Number(yLength) || 1;
-            this.zLength = Number(zLength) || 1;
-            switch (type) {
-            case 'Uint8':
-            case 'uint8':
-            case 'uchar':
-            case 'unsigned char':
-            case 'uint8_t':
-                this.data = new Uint8Array(arrayBuffer);
-                break;
-            case 'Int8':
-            case 'int8':
-            case 'signed char':
-            case 'int8_t':
-                this.data = new Int8Array(arrayBuffer);
-                break;
-            case 'Int16':
-            case 'int16':
-            case 'short':
-            case 'short int':
-            case 'signed short':
-            case 'signed short int':
-            case 'int16_t':
-                this.data = new Int16Array(arrayBuffer);
-                break;
-            case 'Uint16':
-            case 'uint16':
-            case 'ushort':
-            case 'unsigned short':
-            case 'unsigned short int':
-            case 'uint16_t':
-                this.data = new Uint16Array(arrayBuffer);
-                break;
-            case 'Int32':
-            case 'int32':
-            case 'int':
-            case 'signed int':
-            case 'int32_t':
-                this.data = new Int32Array(arrayBuffer);
-                break;
-            case 'Uint32':
-            case 'uint32':
-            case 'uint':
-            case 'unsigned int':
-            case 'uint32_t':
-                this.data = new Uint32Array(arrayBuffer);
-                break;
-            case 'longlong':
-            case 'long long':
-            case 'long long int':
-            case 'signed long long':
-            case 'signed long long int':
-            case 'int64':
-            case 'int64_t':
-            case 'ulonglong':
-            case 'unsigned long long':
-            case 'unsigned long long int':
-            case 'uint64':
-            case 'uint64_t':
-                throw 'Error in Volume constructor : this type is not supported in JavaScript';
-                break;
-            case 'Float32':
-            case 'float32':
-            case 'float':
-                this.data = new Float32Array(arrayBuffer);
-                break;
-            case 'Float64':
-            case 'float64':
-            case 'double':
-                this.data = new Float64Array(arrayBuffer);
-                break;
-            default:
-                this.data = new Uint8Array(arrayBuffer);
-            }
-            if (this.data.length !== this.xLength * this.yLength * this.zLength) {
-                throw 'Error in Volume constructor, lengths are not matching arrayBuffer size';
-            }
-        }
-        this.spacing = [
-            1,
-            1,
-            1
-        ];
-        this.offset = [
-            0,
-            0,
-            0
-        ];
-        this.matrix = new THREE.Matrix3();
-        this.matrix.identity();
-        var lowerThreshold = -Infinity;
-        Object.defineProperty(this, 'lowerThreshold', {
-            get: function () {
-                return lowerThreshold;
-            },
-            set: function (value) {
-                lowerThreshold = value;
-                this.sliceList.forEach(function (slice) {
-                    slice.geometryNeedsUpdate = true;
-                });
-            }
-        });
-        var upperThreshold = Infinity;
-        Object.defineProperty(this, 'upperThreshold', {
-            get: function () {
-                return upperThreshold;
-            },
-            set: function (value) {
-                upperThreshold = value;
-                this.sliceList.forEach(function (slice) {
-                    slice.geometryNeedsUpdate = true;
-                });
-            }
-        });
-        this.sliceList = [];
-    };
-    Volume.prototype = {
-        constructor: Volume,
-        getData: function (i, j, k) {
-            return this.data[k * this.xLength * this.yLength + j * this.xLength + i];
-        },
-        access: function (i, j, k) {
-            return k * this.xLength * this.yLength + j * this.xLength + i;
-        },
-        reverseAccess: function (index) {
-            var z = Math.floor(index / (this.yLength * this.xLength));
-            var y = Math.floor((index - z * this.yLength * this.xLength) / this.xLength);
-            var x = index - z * this.yLength * this.xLength - y * this.xLength;
-            return [
-                x,
-                y,
-                z
-            ];
-        },
-        map: function (functionToMap, context) {
-            var length = this.data.length;
-            context = context || this;
-            for (var i = 0; i < length; i++) {
-                this.data[i] = functionToMap.call(context, this.data[i], i, this.data);
-            }
-            return this;
-        },
-        extractPerpendicularPlane: function (axis, RASIndex) {
-            var iLength, jLength, sliceAccess, planeMatrix = new THREE.Matrix4().identity(), volume = this, planeWidth, planeHeight, firstSpacing, secondSpacing, positionOffset, IJKIndex;
-            var axisInIJK = new THREE.Vector3(), firstDirection = new THREE.Vector3(), secondDirection = new THREE.Vector3();
-            var dimensions = new THREE.Vector3(this.xLength, this.yLength, this.zLength);
-            switch (axis) {
-            case 'x':
-                axisInIJK.set(1, 0, 0);
-                firstDirection.set(0, 0, -1);
-                secondDirection.set(0, -1, 0);
-                firstSpacing = this.spacing[2];
-                secondSpacing = this.spacing[1];
-                IJKIndex = new THREE.Vector3(RASIndex, 0, 0);
-                planeMatrix.multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2));
-                positionOffset = (volume.RASDimensions[0] - 1) / 2;
-                planeMatrix.setPosition(new THREE.Vector3(RASIndex - positionOffset, 0, 0));
-                break;
-            case 'y':
-                axisInIJK.set(0, 1, 0);
-                firstDirection.set(1, 0, 0);
-                secondDirection.set(0, 0, 1);
-                firstSpacing = this.spacing[0];
-                secondSpacing = this.spacing[2];
-                IJKIndex = new THREE.Vector3(0, RASIndex, 0);
-                planeMatrix.multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
-                positionOffset = (volume.RASDimensions[1] - 1) / 2;
-                planeMatrix.setPosition(new THREE.Vector3(0, RASIndex - positionOffset, 0));
-                break;
-            case 'z':
-            default:
-                axisInIJK.set(0, 0, 1);
-                firstDirection.set(1, 0, 0);
-                secondDirection.set(0, -1, 0);
-                firstSpacing = this.spacing[0];
-                secondSpacing = this.spacing[1];
-                IJKIndex = new THREE.Vector3(0, 0, RASIndex);
-                positionOffset = (volume.RASDimensions[2] - 1) / 2;
-                planeMatrix.setPosition(new THREE.Vector3(0, 0, RASIndex - positionOffset));
-                break;
-            }
-            firstDirection.applyMatrix4(volume.inverseMatrix).normalize();
-            firstDirection.argVar = 'i';
-            secondDirection.applyMatrix4(volume.inverseMatrix).normalize();
-            secondDirection.argVar = 'j';
-            axisInIJK.applyMatrix4(volume.inverseMatrix).normalize();
-            iLength = Math.floor(Math.abs(firstDirection.dot(dimensions)));
-            jLength = Math.floor(Math.abs(secondDirection.dot(dimensions)));
-            planeWidth = Math.abs(iLength * firstSpacing);
-            planeHeight = Math.abs(jLength * secondSpacing);
-            IJKIndex = Math.abs(Math.round(IJKIndex.applyMatrix4(volume.inverseMatrix).dot(axisInIJK)));
-            var base = [
-                new THREE.Vector3(1, 0, 0),
-                new THREE.Vector3(0, 1, 0),
-                new THREE.Vector3(0, 0, 1)
-            ];
-            var iDirection = [
-                firstDirection,
-                secondDirection,
-                axisInIJK
-            ].find(function (x) {
-                return Math.abs(x.dot(base[0])) > 0.9;
-            });
-            var jDirection = [
-                firstDirection,
-                secondDirection,
-                axisInIJK
-            ].find(function (x) {
-                return Math.abs(x.dot(base[1])) > 0.9;
-            });
-            var kDirection = [
-                firstDirection,
-                secondDirection,
-                axisInIJK
-            ].find(function (x) {
-                return Math.abs(x.dot(base[2])) > 0.9;
-            });
-            var argumentsWithInversion = [
-                'volume.xLength-1-',
-                'volume.yLength-1-',
-                'volume.zLength-1-'
-            ];
-            var argArray = [
-                iDirection,
-                jDirection,
-                kDirection
-            ].map(function (direction, n) {
-                return (direction.dot(base[n]) > 0 ? '' : argumentsWithInversion[n]) + (direction === axisInIJK ? 'IJKIndex' : direction.argVar);
-            });
-            var argString = argArray.join(',');
-            sliceAccess = eval('(function sliceAccess (i,j) {return volume.access( ' + argString + ');})');
-            return {
-                iLength: iLength,
-                jLength: jLength,
-                sliceAccess: sliceAccess,
-                matrix: planeMatrix,
-                planeWidth: planeWidth,
-                planeHeight: planeHeight
-            };
-        },
-        extractSlice: function (axis, index) {
-            var slice = new VolumeSlice(this, index, axis);
-            this.sliceList.push(slice);
-            return slice;
-        },
-        repaintAllSlices: function () {
-            this.sliceList.forEach(function (slice) {
-                slice.repaint();
-            });
-            return this;
-        },
-        computeMinMax: function () {
-            var min = Infinity;
-            var max = -Infinity;
-            var datasize = this.data.length;
-            var i = 0;
-            for (i = 0; i < datasize; i++) {
-                if (!isNaN(this.data[i])) {
-                    var value = this.data[i];
-                    min = Math.min(min, value);
-                    max = Math.max(max, value);
-                }
-            }
-            this.min = min;
-            this.max = max;
-            return [
-                min,
-                max
-            ];
-        }
-    };
-    return threex.misc.Volume = Volume;
 });
 define('skylark-threejs-ex/modifiers/ExplodeModifier',[
     "skylark-threejs",
@@ -101111,6 +115326,626 @@ define('skylark-threejs-ex/textures/FlakesTexture',[
     }
     return threex.textures.FlakesTexture = FlakesTexture;
 });
+define('skylark-threejs-ex/webxr/ARButton',[
+  "../threex"
+], function (threex) {
+    'use strict';
+    var ARButton = {
+        createButton: function (renderer, sessionInit = {}) {
+            function showStartAR() {
+                var currentSession = null;
+                function onSessionStarted(session) {
+                    session.addEventListener('end', onSessionEnded);
+                    renderer.xr.setReferenceSpaceType('local');
+                    renderer.xr.setSession(session);
+                    button.textContent = 'STOP AR';
+                    currentSession = session;
+                }
+                function onSessionEnded() {
+                    currentSession.removeEventListener('end', onSessionEnded);
+                    button.textContent = 'START AR';
+                    currentSession = null;
+                }
+                button.style.display = '';
+                button.style.cursor = 'pointer';
+                button.style.left = 'calc(50% - 50px)';
+                button.style.width = '100px';
+                button.textContent = 'START AR';
+                button.onmouseenter = function () {
+                    button.style.opacity = '1.0';
+                };
+                button.onmouseleave = function () {
+                    button.style.opacity = '0.5';
+                };
+                button.onclick = function () {
+                    if (currentSession === null) {
+                        navigator.xr.requestSession('immersive-ar', sessionInit).then(onSessionStarted);
+                    } else {
+                        currentSession.end();
+                    }
+                };
+            }
+            function disableButton() {
+                button.style.display = '';
+                button.style.cursor = 'auto';
+                button.style.left = 'calc(50% - 75px)';
+                button.style.width = '150px';
+                button.onmouseenter = null;
+                button.onmouseleave = null;
+                button.onclick = null;
+            }
+            function showARNotSupported() {
+                disableButton();
+                button.textContent = 'AR NOT SUPPORTED';
+            }
+            function stylizeElement(element) {
+                element.style.position = 'absolute';
+                element.style.bottom = '20px';
+                element.style.padding = '12px 6px';
+                element.style.border = '1px solid #fff';
+                element.style.borderRadius = '4px';
+                element.style.background = 'rgba(0,0,0,0.1)';
+                element.style.color = '#fff';
+                element.style.font = 'normal 13px sans-serif';
+                element.style.textAlign = 'center';
+                element.style.opacity = '0.5';
+                element.style.outline = 'none';
+                element.style.zIndex = '999';
+            }
+            if ('xr' in navigator) {
+                var button = document.createElement('button');
+                button.style.display = 'none';
+                stylizeElement(button);
+                navigator.xr.isSessionSupported('immersive-ar').then(function (supported) {
+                    supported ? showStartAR() : showARNotSupported();
+                }).catch(showARNotSupported);
+                return button;
+            } else {
+                var message = document.createElement('a');
+                if (window.isSecureContext === false) {
+                    message.href = document.location.href.replace(/^http:/, 'https:');
+                    message.innerHTML = 'WEBXR NEEDS HTTPS';
+                } else {
+                    message.href = 'https://immersiveweb.dev/';
+                    message.innerHTML = 'WEBXR NOT AVAILABLE';
+                }
+                message.style.left = 'calc(50% - 90px)';
+                message.style.width = '180px';
+                message.style.textDecoration = 'none';
+                stylizeElement(message);
+                return message;
+            }
+        }
+    };
+    return threex.webxr.ARButton = ARButton;
+});
+define('skylark-threejs-ex/webxr/VRButton',[
+  "../threex"
+], function (threex) {
+    'use strict';
+    var VRButton = {
+        createButton: function (renderer, options) {
+            if (options && options.referenceSpaceType) {
+                renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
+            }
+            function showEnterVR() {
+                var currentSession = null;
+                function onSessionStarted(session) {
+                    session.addEventListener('end', onSessionEnded);
+                    renderer.xr.setSession(session);
+                    button.textContent = 'EXIT VR';
+                    currentSession = session;
+                }
+                function onSessionEnded() {
+                    currentSession.removeEventListener('end', onSessionEnded);
+                    button.textContent = 'ENTER VR';
+                    currentSession = null;
+                }
+                button.style.display = '';
+                button.style.cursor = 'pointer';
+                button.style.left = 'calc(50% - 50px)';
+                button.style.width = '100px';
+                button.textContent = 'ENTER VR';
+                button.onmouseenter = function () {
+                    button.style.opacity = '1.0';
+                };
+                button.onmouseleave = function () {
+                    button.style.opacity = '0.5';
+                };
+                button.onclick = function () {
+                    if (currentSession === null) {
+                        var sessionInit = {
+                            optionalFeatures: [
+                                'local-floor',
+                                'bounded-floor'
+                            ]
+                        };
+                        navigator.xr.requestSession('immersive-vr', sessionInit).then(onSessionStarted);
+                    } else {
+                        currentSession.end();
+                    }
+                };
+            }
+            function disableButton() {
+                button.style.display = '';
+                button.style.cursor = 'auto';
+                button.style.left = 'calc(50% - 75px)';
+                button.style.width = '150px';
+                button.onmouseenter = null;
+                button.onmouseleave = null;
+                button.onclick = null;
+            }
+            function showWebXRNotFound() {
+                disableButton();
+                button.textContent = 'VR NOT SUPPORTED';
+            }
+            function stylizeElement(element) {
+                element.style.position = 'absolute';
+                element.style.bottom = '20px';
+                element.style.padding = '12px 6px';
+                element.style.border = '1px solid #fff';
+                element.style.borderRadius = '4px';
+                element.style.background = 'rgba(0,0,0,0.1)';
+                element.style.color = '#fff';
+                element.style.font = 'normal 13px sans-serif';
+                element.style.textAlign = 'center';
+                element.style.opacity = '0.5';
+                element.style.outline = 'none';
+                element.style.zIndex = '999';
+            }
+            if ('xr' in navigator) {
+                var button = document.createElement('button');
+                button.style.display = 'none';
+                stylizeElement(button);
+                navigator.xr.isSessionSupported('immersive-vr').then(function (supported) {
+                    supported ? showEnterVR() : showWebXRNotFound();
+                });
+                return button;
+            } else {
+                var message = document.createElement('a');
+                if (window.isSecureContext === false) {
+                    message.href = document.location.href.replace(/^http:/, 'https:');
+                    message.innerHTML = 'WEBXR NEEDS HTTPS';
+                } else {
+                    message.href = 'https://immersiveweb.dev/';
+                    message.innerHTML = 'WEBXR NOT AVAILABLE';
+                }
+                message.style.left = 'calc(50% - 90px)';
+                message.style.width = '180px';
+                message.style.textDecoration = 'none';
+                stylizeElement(message);
+                return message;
+            }
+        }
+    };
+    return threex.webxr.VRButton = VRButton;
+});
+define('skylark-threejs-ex/utils/motion',[
+    "../threex"
+],function (threex) {
+    'use strict';
+    const Constants = {
+        Handedness: Object.freeze({
+            NONE: 'none',
+            LEFT: 'left',
+            RIGHT: 'right'
+        }),
+        ComponentState: Object.freeze({
+            DEFAULT: 'default',
+            TOUCHED: 'touched',
+            PRESSED: 'pressed'
+        }),
+        ComponentProperty: Object.freeze({
+            BUTTON: 'button',
+            X_AXIS: 'xAxis',
+            Y_AXIS: 'yAxis',
+            STATE: 'state'
+        }),
+        ComponentType: Object.freeze({
+            TRIGGER: 'trigger',
+            SQUEEZE: 'squeeze',
+            TOUCHPAD: 'touchpad',
+            THUMBSTICK: 'thumbstick',
+            BUTTON: 'button'
+        }),
+        ButtonTouchThreshold: 0.05,
+        AxisTouchThreshold: 0.1,
+        VisualResponseProperty: Object.freeze({
+            TRANSFORM: 'transform',
+            VISIBILITY: 'visibility'
+        })
+    };
+    async function fetchJsonFile(path) {
+        const response = await fetch(path);
+        if (!response.ok) {
+            throw new Error(response.statusText);
+        } else {
+            return response.json();
+        }
+    }
+    async function fetchProfilesList(basePath) {
+        if (!basePath) {
+            throw new Error('No basePath supplied');
+        }
+        const profileListFileName = 'profilesList.json';
+        const profilesList = await fetchJsonFile(`${ basePath }/${ profileListFileName }`);
+        return profilesList;
+    }
+    async function fetchProfile(xrInputSource, basePath, defaultProfile = null, getAssetPath = true) {
+        if (!xrInputSource) {
+            throw new Error('No xrInputSource supplied');
+        }
+        if (!basePath) {
+            throw new Error('No basePath supplied');
+        }
+        const supportedProfilesList = await fetchProfilesList(basePath);
+        let match;
+        xrInputSource.profiles.some(profileId => {
+            const supportedProfile = supportedProfilesList[profileId];
+            if (supportedProfile) {
+                match = {
+                    profileId,
+                    profilePath: `${ basePath }/${ supportedProfile.path }`,
+                    deprecated: !!supportedProfile.deprecated
+                };
+            }
+            return !!match;
+        });
+        if (!match) {
+            if (!defaultProfile) {
+                throw new Error('No matching profile name found');
+            }
+            const supportedProfile = supportedProfilesList[defaultProfile];
+            if (!supportedProfile) {
+                throw new Error(`No matching profile name found and default profile "${ defaultProfile }" missing.`);
+            }
+            match = {
+                profileId: defaultProfile,
+                profilePath: `${ basePath }/${ supportedProfile.path }`,
+                deprecated: !!supportedProfile.deprecated
+            };
+        }
+        const profile = await fetchJsonFile(match.profilePath);
+        let assetPath;
+        if (getAssetPath) {
+            let layout;
+            if (xrInputSource.handedness === 'any') {
+                layout = profile.layouts[Object.keys(profile.layouts)[0]];
+            } else {
+                layout = profile.layouts[xrInputSource.handedness];
+            }
+            if (!layout) {
+                throw new Error(`No matching handedness, ${ xrInputSource.handedness }, in profile ${ match.profileId }`);
+            }
+            if (layout.assetPath) {
+                assetPath = match.profilePath.replace('profile.json', layout.assetPath);
+            }
+        }
+        return {
+            profile,
+            assetPath
+        };
+    }
+    const defaultComponentValues = {
+        xAxis: 0,
+        yAxis: 0,
+        button: 0,
+        state: Constants.ComponentState.DEFAULT
+    };
+    function normalizeAxes(x = 0, y = 0) {
+        let xAxis = x;
+        let yAxis = y;
+        const hypotenuse = Math.sqrt(x * x + y * y);
+        if (hypotenuse > 1) {
+            const theta = Math.atan2(y, x);
+            xAxis = Math.cos(theta);
+            yAxis = Math.sin(theta);
+        }
+        const result = {
+            normalizedXAxis: xAxis * 0.5 + 0.5,
+            normalizedYAxis: yAxis * 0.5 + 0.5
+        };
+        return result;
+    }
+    class VisualResponse {
+        constructor(visualResponseDescription) {
+            this.componentProperty = visualResponseDescription.componentProperty;
+            this.states = visualResponseDescription.states;
+            this.valueNodeName = visualResponseDescription.valueNodeName;
+            this.valueNodeProperty = visualResponseDescription.valueNodeProperty;
+            if (this.valueNodeProperty === Constants.VisualResponseProperty.TRANSFORM) {
+                this.minNodeName = visualResponseDescription.minNodeName;
+                this.maxNodeName = visualResponseDescription.maxNodeName;
+            }
+            this.value = 0;
+            this.updateFromComponent(defaultComponentValues);
+        }
+        updateFromComponent({xAxis, yAxis, button, state}) {
+            const {normalizedXAxis, normalizedYAxis} = normalizeAxes(xAxis, yAxis);
+            switch (this.componentProperty) {
+            case Constants.ComponentProperty.X_AXIS:
+                this.value = this.states.includes(state) ? normalizedXAxis : 0.5;
+                break;
+            case Constants.ComponentProperty.Y_AXIS:
+                this.value = this.states.includes(state) ? normalizedYAxis : 0.5;
+                break;
+            case Constants.ComponentProperty.BUTTON:
+                this.value = this.states.includes(state) ? button : 0;
+                break;
+            case Constants.ComponentProperty.STATE:
+                if (this.valueNodeProperty === Constants.VisualResponseProperty.VISIBILITY) {
+                    this.value = this.states.includes(state);
+                } else {
+                    this.value = this.states.includes(state) ? 1 : 0;
+                }
+                break;
+            default:
+                throw new Error(`Unexpected visualResponse componentProperty ${ this.componentProperty }`);
+            }
+        }
+    }
+    class Component {
+        constructor(componentId, componentDescription) {
+            if (!componentId || !componentDescription || !componentDescription.visualResponses || !componentDescription.gamepadIndices || Object.keys(componentDescription.gamepadIndices).length === 0) {
+                throw new Error('Invalid arguments supplied');
+            }
+            this.id = componentId;
+            this.type = componentDescription.type;
+            this.rootNodeName = componentDescription.rootNodeName;
+            this.touchPointNodeName = componentDescription.touchPointNodeName;
+            this.visualResponses = {};
+            Object.keys(componentDescription.visualResponses).forEach(responseName => {
+                const visualResponse = new VisualResponse(componentDescription.visualResponses[responseName]);
+                this.visualResponses[responseName] = visualResponse;
+            });
+            this.gamepadIndices = Object.assign({}, componentDescription.gamepadIndices);
+            this.values = {
+                state: Constants.ComponentState.DEFAULT,
+                button: this.gamepadIndices.button !== undefined ? 0 : undefined,
+                xAxis: this.gamepadIndices.xAxis !== undefined ? 0 : undefined,
+                yAxis: this.gamepadIndices.yAxis !== undefined ? 0 : undefined
+            };
+        }
+        get data() {
+            const data = {
+                id: this.id,
+                ...this.values
+            };
+            return data;
+        }
+        updateFromGamepad(gamepad) {
+            this.values.state = Constants.ComponentState.DEFAULT;
+            if (this.gamepadIndices.button !== undefined && gamepad.buttons.length > this.gamepadIndices.button) {
+                const gamepadButton = gamepad.buttons[this.gamepadIndices.button];
+                this.values.button = gamepadButton.value;
+                this.values.button = this.values.button < 0 ? 0 : this.values.button;
+                this.values.button = this.values.button > 1 ? 1 : this.values.button;
+                if (gamepadButton.pressed || this.values.button === 1) {
+                    this.values.state = Constants.ComponentState.PRESSED;
+                } else if (gamepadButton.touched || this.values.button > Constants.ButtonTouchThreshold) {
+                    this.values.state = Constants.ComponentState.TOUCHED;
+                }
+            }
+            if (this.gamepadIndices.xAxis !== undefined && gamepad.axes.length > this.gamepadIndices.xAxis) {
+                this.values.xAxis = gamepad.axes[this.gamepadIndices.xAxis];
+                this.values.xAxis = this.values.xAxis < -1 ? -1 : this.values.xAxis;
+                this.values.xAxis = this.values.xAxis > 1 ? 1 : this.values.xAxis;
+                if (this.values.state === Constants.ComponentState.DEFAULT && Math.abs(this.values.xAxis) > Constants.AxisTouchThreshold) {
+                    this.values.state = Constants.ComponentState.TOUCHED;
+                }
+            }
+            if (this.gamepadIndices.yAxis !== undefined && gamepad.axes.length > this.gamepadIndices.yAxis) {
+                this.values.yAxis = gamepad.axes[this.gamepadIndices.yAxis];
+                this.values.yAxis = this.values.yAxis < -1 ? -1 : this.values.yAxis;
+                this.values.yAxis = this.values.yAxis > 1 ? 1 : this.values.yAxis;
+                if (this.values.state === Constants.ComponentState.DEFAULT && Math.abs(this.values.yAxis) > Constants.AxisTouchThreshold) {
+                    this.values.state = Constants.ComponentState.TOUCHED;
+                }
+            }
+            Object.values(this.visualResponses).forEach(visualResponse => {
+                visualResponse.updateFromComponent(this.values);
+            });
+        }
+    }
+    class MotionController {
+        constructor(xrInputSource, profile, assetUrl) {
+            if (!xrInputSource) {
+                throw new Error('No xrInputSource supplied');
+            }
+            if (!profile) {
+                throw new Error('No profile supplied');
+            }
+            this.xrInputSource = xrInputSource;
+            this.assetUrl = assetUrl;
+            this.id = profile.profileId;
+            this.layoutDescription = profile.layouts[xrInputSource.handedness];
+            this.components = {};
+            Object.keys(this.layoutDescription.components).forEach(componentId => {
+                const componentDescription = this.layoutDescription.components[componentId];
+                this.components[componentId] = new Component(componentId, componentDescription);
+            });
+            this.updateFromGamepad();
+        }
+        get gripSpace() {
+            return this.xrInputSource.gripSpace;
+        }
+        get targetRaySpace() {
+            return this.xrInputSource.targetRaySpace;
+        }
+        get data() {
+            const data = [];
+            Object.values(this.components).forEach(component => {
+                data.push(component.data);
+            });
+            return data;
+        }
+        updateFromGamepad() {
+            Object.values(this.components).forEach(component => {
+                component.updateFromGamepad(this.xrInputSource.gamepad);
+            });
+        }
+    }
+    return threex.utils.motion ={
+        Constants,
+        MotionController,
+        fetchProfile,
+        fetchProfilesList
+    };
+});
+define('skylark-threejs-ex/webxr/XRControllerModelFactory',[
+    "skylark-threejs",
+    "../threex",
+    '../loaders/GLTFLoader',
+    '../utils/motion'
+], function (
+    THREE, 
+    threex,
+    GLTFLoader, 
+    motion
+) {
+    'use strict';
+    const DEFAULT_PROFILES_PATH = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles';
+    const DEFAULT_PROFILE = 'generic-trigger';
+    function XRControllerModel() {
+        THREE.Object3D.call(this);
+        this.motionController = null;
+        this.envMap = null;
+    }
+    XRControllerModel.prototype = Object.assign(Object.create(THREE.Object3D.prototype), {
+        constructor: XRControllerModel,
+        setEnvironmentMap: function (envMap) {
+            if (this.envMap == envMap) {
+                return this;
+            }
+            this.envMap = envMap;
+            this.traverse(child => {
+                if (child.isMesh) {
+                    child.material.envMap = this.envMap;
+                    child.material.needsUpdate = true;
+                }
+            });
+            return this;
+        },
+        updateMatrixWorld: function (force) {
+            THREE.Object3D.prototype.updateMatrixWorld.call(this, force);
+            if (!this.motionController)
+                return;
+            this.motionController.updateFromGamepad();
+            Object.values(this.motionController.components).forEach(component => {
+                Object.values(component.visualResponses).forEach(visualResponse => {
+                    const {valueNode, minNode, maxNode, value, valueNodeProperty} = visualResponse;
+                    if (!valueNode)
+                        return;
+                    if (valueNodeProperty === motion.Constants.VisualResponseProperty.VISIBILITY) {
+                        valueNode.visible = value;
+                    } else if (valueNodeProperty === motion.Constants.VisualResponseProperty.TRANSFORM) {
+                        THREE.Quaternion.slerp(minNode.quaternion, maxNode.quaternion, valueNode.quaternion, value);
+                        valueNode.position.lerpVectors(minNode.position, maxNode.position, value);
+                    }
+                });
+            });
+        }
+    });
+    function findNodes(motionController, scene) {
+        Object.values(motionController.components).forEach(component => {
+            const {type, touchPointNodeName, visualResponses} = component;
+            if (type === MotionControllerConstants.ComponentType.TOUCHPAD) {
+                component.touchPointNode = scene.getObjectByName(touchPointNodeName);
+                if (component.touchPointNode) {
+                    const sphereGeometry = new THREE.SphereGeometry(0.001);
+                    const material = new THREE.MeshBasicMaterial({ color: 255 });
+                    const sphere = new THREE.Mesh(sphereGeometry, material);
+                    component.touchPointNode.add(sphere);
+                } else {
+                    console.warn(`Could not find touch dot, ${ component.touchPointNodeName }, in touchpad component ${ component.id }`);
+                }
+            }
+            Object.values(visualResponses).forEach(visualResponse => {
+                const {valueNodeName, minNodeName, maxNodeName, valueNodeProperty} = visualResponse;
+                if (valueNodeProperty === motion.Constants.VisualResponseProperty.TRANSFORM) {
+                    visualResponse.minNode = scene.getObjectByName(minNodeName);
+                    visualResponse.maxNode = scene.getObjectByName(maxNodeName);
+                    if (!visualResponse.minNode) {
+                        console.warn(`Could not find ${ minNodeName } in the model`);
+                        return;
+                    }
+                    if (!visualResponse.maxNode) {
+                        console.warn(`Could not find ${ maxNodeName } in the model`);
+                        return;
+                    }
+                }
+                visualResponse.valueNode = scene.getObjectByName(valueNodeName);
+                if (!visualResponse.valueNode) {
+                    console.warn(`Could not find ${ valueNodeName } in the model`);
+                }
+            });
+        });
+    }
+    function addAssetSceneToControllerModel(controllerModel, scene) {
+        findNodes(controllerModel.motionController, scene);
+        if (controllerModel.envMap) {
+            scene.traverse(child => {
+                if (child.isMesh) {
+                    child.material.envMap = controllerModel.envMap;
+                    child.material.needsUpdate = true;
+                }
+            });
+        }
+        controllerModel.add(scene);
+    }
+    var XRControllerModelFactory = function () {
+        function XRControllerModelFactory(gltfLoader = null) {
+            this.gltfLoader = gltfLoader;
+            this.path = DEFAULT_PROFILES_PATH;
+            this._assetCache = {};
+            if (!this.gltfLoader) {
+                this.gltfLoader = new GLTFLoader();
+            }
+        }
+        XRControllerModelFactory.prototype = {
+            constructor: XRControllerModelFactory,
+            createControllerModel: function (controller) {
+                const controllerModel = new XRControllerModel();
+                let scene = null;
+                controller.addEventListener('connected', event => {
+                    const xrInputSource = event.data;
+                    if (xrInputSource.targetRayMode !== 'tracked-pointer' || !xrInputSource.gamepad)
+                        return;
+                    motion.fetchProfile(xrInputSource, this.path, DEFAULT_PROFILE).then(({profile, assetPath}) => {
+                        controllerModel.motionController = new c.MotionController(xrInputSource, profile, assetPath);
+                        let cachedAsset = this._assetCache[controllerModel.motionController.assetUrl];
+                        if (cachedAsset) {
+                            scene = cachedAsset.scene.clone();
+                            addAssetSceneToControllerModel(controllerModel, scene);
+                        } else {
+                            if (!this.gltfLoader) {
+                                throw new Error(`GLTFLoader not set.`);
+                            }
+                            this.gltfLoader.setPath('');
+                            this.gltfLoader.load(controllerModel.motionController.assetUrl, asset => {
+                                this._assetCache[controllerModel.motionController.assetUrl] = asset;
+                                scene = asset.scene.clone();
+                                addAssetSceneToControllerModel(controllerModel, scene);
+                            }, null, () => {
+                                throw new Error(`Asset ${ controllerModel.motionController.assetUrl } missing or malformed.`);
+                            });
+                        }
+                    }).catch(err => {
+                        console.warn(err);
+                    });
+                });
+                controller.addEventListener('disconnected', () => {
+                    controllerModel.motionController = null;
+                    controllerModel.remove(scene);
+                    scene = null;
+                });
+                return controllerModel;
+            }
+        };
+        return XRControllerModelFactory;
+    }();
+    return threex.webxr.XRControllerModelFactory = XRControllerModelFactory;
+});
 define('skylark-threejs-ex/main',[
 	"./threex",
 
@@ -101190,7 +116025,6 @@ define('skylark-threejs-ex/main',[
 	"./lines/Wireframe",
 	"./lines/WireframeGeometry2",
 
-	"./loaders/TTFLoader",
 //	"./loaders/LoaderSupport",
 	"./loaders/3MFLoader",
 	"./loaders/AMFLoader",
@@ -101198,27 +116032,44 @@ define('skylark-threejs-ex/main',[
 	"./loaders/AssimpLoader",
 	"./loaders/AWDLoader",
 	"./loaders/BabylonLoader",
+	"./loaders/BasisTextureLoader",
+	"./loaders/BVHLoader",
 	"./loaders/ColladaLoader",
+	"./loaders/DDSLoader",
 	"./loaders/DRACOLoader",
+	"./loaders/EXRLoader",
 	"./loaders/FBXLoader",
 	"./loaders/GCodeLoader",
 	"./loaders/GLTFLoader",
+	"./loaders/HDRCubeTextureLoader",
+	"./loaders/KMZLoader",
+	"./loaders/KTXLoader",
+	"./loaders/LDrawLoader",
+	"./loaders/LWOLoader",
+	"./loaders/MD2Loader",
+	"./loaders/MDDLoader",
+	"./loaders/MMDLoader",
 	"./loaders/MTLLoader",
+	"./loaders/NodeMaterialLoader",
+	"./loaders/NRRDLoader",
 	"./loaders/OBJLoader",
 	"./loaders/OBJLoader2",
+	"./loaders/OBJLoader2Parallel",
 	"./loaders/PCDLoader",
+	"./loaders/PDBLoader",
 	"./loaders/PLYLoader",
 	"./loaders/PRWMLoader",
+	"./loaders/PVRLoader",
+	"./loaders/RGBELoader",
 	"./loaders/STLLoader",
 	"./loaders/SVGLoader",
 	"./loaders/TDSLoader",
+	"./loaders/TGALoader",
+	"./loaders/TTFLoader",
 	"./loaders/VRMLLoader",
+	"./loaders/VRMLoader",
 	"./loaders/VTKLoader",
 	"./loaders/XLoader",
-	"./loaders/DDSLoader",
-	"./loaders/PVRLoader",
-	"./loaders/TGALoader",
-	"./loaders/KTXLoader",
 
 	"./math/ColorConverter",
 	"./math/ConvexHull",
@@ -101346,7 +116197,11 @@ define('skylark-threejs-ex/main',[
 	"./shaders/VolumeShader",
 	"./shaders/WaterRefractionShader",
 
-	"./textures/FlakesTexture"
+	"./textures/FlakesTexture",
+
+	"./webxr/ARButton",
+	"./webxr/VRButton",
+	"./webxr/XRControllerModelFactory"
 
 
 

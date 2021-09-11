@@ -2,7 +2,7 @@ define([
     "skylark-threejs",
     "../threex",
     '../loaders/TGALoader',
-    '../libs/mmdparser'
+    '../utils/mmdparser'
 ], function (
     THREE, 
     threex,

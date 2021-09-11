@@ -1,6 +1,6 @@
 define([
     "skylark-threejs",
-    "../threex"
+    "../../threex"
 ], function (
     THREE,
     threex

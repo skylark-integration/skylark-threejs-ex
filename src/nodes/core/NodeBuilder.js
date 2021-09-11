@@ -25,7 +25,7 @@ define([
     Vector4Node, 
     TextureNode, 
     CubeTextureNode, 
-    TextureNode
+    TextureCubeNode
 ) {
     'use strict';
     var elements = NodeUtils.elements, constructors = [
