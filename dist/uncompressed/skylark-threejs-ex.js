@@ -85377,7 +85377,7 @@ define('skylark-threejs-ex/nodes/Nodes',[
 
 ) {
     'use strict';
-    return threex.node.Nodes = {
+    return threex.nodes.Nodes = {
         Node,
         TempNode,
         InputNode,

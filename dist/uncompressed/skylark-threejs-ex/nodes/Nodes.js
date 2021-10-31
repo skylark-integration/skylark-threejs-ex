@@ -181,7 +181,7 @@ define([
 
 ) {
     'use strict';
-    return threex.node.Nodes = {
+    return threex.nodes.Nodes = {
         Node,
         TempNode,
         InputNode,
